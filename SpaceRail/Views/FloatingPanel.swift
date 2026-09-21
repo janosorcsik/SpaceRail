@@ -32,17 +32,12 @@ final class FloatingPanel: NSPanel {
         NotificationCenter.default.addObserver(self, selector: #selector(recenter), name: NSWindow.didResizeNotification, object: self)
     }
 
+    // Opened by a hotkey many times a day: no entrance animation, it would only read as latency.
     func showPanel() {
-        if !isVisible {
-            alphaValue = 0
-            orderFrontRegardless()
-        }
+        alphaValue = 1
+        if !isVisible { orderFrontRegardless() }
         hostingView.layoutSubtreeIfNeeded()
         recenter()
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.15
-            animator().alphaValue = 1
-        }
     }
 
     // Slightly above centre reads better than dead centre, like the system volume/brightness HUD.
@@ -56,10 +51,17 @@ final class FloatingPanel: NSPanel {
         if frame.origin != origin { setFrameOrigin(origin) }
     }
 
+    // Usually triggered by the auto-hide timer, not the user, so a short fade keeps it from
+    // vanishing abruptly. Exit is faster than any entrance would be, and ease-out, not in-out.
     func hidePanel() {
         guard isVisible else { return }
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            orderOut(nil)
+            return
+        }
         NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.2
+            context.duration = 0.12
+            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.23, 1, 0.32, 1)
             animator().alphaValue = 0
         }, completionHandler: { [weak self] in
             MainActor.assumeIsolated {

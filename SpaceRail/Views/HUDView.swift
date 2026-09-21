@@ -94,7 +94,7 @@ private struct WorkspaceCard: View {
                 .strokeBorder(isSelected ? Color.accentColor : .clear, lineWidth: 2)
         }
         .foregroundStyle(isSelected ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
-        .animation(.easeOut(duration: 0.15), value: isSelected)
+        // Selection follows a keystroke; the highlight must be there on the same frame, not 150 ms later.
     }
 }
 
