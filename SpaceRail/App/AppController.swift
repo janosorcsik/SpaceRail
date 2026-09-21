@@ -12,7 +12,7 @@ final class AppController {
 
     @ObservationIgnored private var panel: FloatingPanel?
     @ObservationIgnored private var hideTask: Task<Void, Never>?
-    @ObservationIgnored private var permissionTimer: Timer?
+    @ObservationIgnored private var permissionTask: Task<Void, Never>?
     @ObservationIgnored private var registeredWorkspaceIDs: Set<Int> = []
 
     init() {
@@ -101,13 +101,12 @@ final class AppController {
             return
         }
         Log.engine.notice("waiting for Accessibility permission")
-        permissionTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, Permissions.isAccessibilityTrusted else { return }
-                self.permissionTimer?.invalidate()
-                self.permissionTimer = nil
-                self.engine.start()
+        permissionTask = Task {
+            while !Permissions.isAccessibilityTrusted {
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled else { return }
             }
+            engine.start()
         }
     }
 

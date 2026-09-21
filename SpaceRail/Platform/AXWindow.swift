@@ -37,10 +37,9 @@ struct AXWindow {
 
     static func focusedWindow(of pid: pid_t) -> AXWindow? {
         let app = AXUIElementCreateApplication(pid)
-        guard let raw = copyAttribute(kAXFocusedWindowAttribute, from: app) else { return nil }
-        // swiftlint:disable:next force_cast
-        let element = raw as! AXUIElement
-        guard let id = windowID(of: element) else { return nil }
+        guard let element = element(copyAttribute(kAXFocusedWindowAttribute, from: app)),
+              let id = windowID(of: element)
+        else { return nil }
         return AXWindow(element: element, id: id, pid: pid)
     }
 
@@ -69,10 +68,6 @@ struct AXWindow {
             }
         }
         return result
-    }
-
-    static func find(id: CGWindowID) -> AXWindow? {
-        find(ids: [id])[id]
     }
 
     static func liveWindowIDs() -> Set<CGWindowID> {
@@ -180,17 +175,26 @@ struct AXWindow {
     }
 
     private func pointAttribute(_ name: String) -> CGPoint? {
-        guard let value = Self.copyAttribute(name, from: element) else { return nil }
+        guard let value = Self.axValue(Self.copyAttribute(name, from: element)) else { return nil }
         var point = CGPoint.zero
-        // swiftlint:disable:next force_cast
-        return AXValueGetValue(value as! AXValue, .cgPoint, &point) ? point : nil
+        return AXValueGetValue(value, .cgPoint, &point) ? point : nil
     }
 
     private func sizeAttribute(_ name: String) -> CGSize? {
-        guard let value = Self.copyAttribute(name, from: element) else { return nil }
+        guard let value = Self.axValue(Self.copyAttribute(name, from: element)) else { return nil }
         var size = CGSize.zero
-        // swiftlint:disable:next force_cast
-        return AXValueGetValue(value as! AXValue, .cgSize, &size) ? size : nil
+        return AXValueGetValue(value, .cgSize, &size) ? size : nil
+    }
+
+    // CF types can't be conditionally cast in Swift; the type ID is the runtime check.
+    private static func element(_ value: AnyObject?) -> AXUIElement? {
+        guard let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        return unsafeDowncast(value, to: AXUIElement.self)
+    }
+
+    private static func axValue(_ value: AnyObject?) -> AXValue? {
+        guard let value, CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
+        return unsafeDowncast(value, to: AXValue.self)
     }
 
     private func isAttributeSettable(_ name: String) -> Bool {

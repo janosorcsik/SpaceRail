@@ -14,6 +14,7 @@ final class WorkspaceEngine {
     private var suppressActivationUntil = Date.distantPast
     private var switchTask: Task<Void, Never>?
     private var adoptTasks: [String: Task<Void, Never>] = [:]
+    private var saveTask: Task<Void, Never>?
 
     init(store: StateStore = StateStore()) {
         self.store = store
@@ -174,7 +175,8 @@ final class WorkspaceEngine {
     // MARK: - Notifications
 
     @objc private func willTerminate(_ notification: Notification) {
-        snapshotSelectedWorkspace()
+        snapshotFrames(of: state.selectedID)
+        saveNow()
     }
 
     @objc private func appDidActivate(_ notification: Notification) {
@@ -223,10 +225,10 @@ final class WorkspaceEngine {
     private func adoptIfPending(_ app: NSRunningApplication) {
         guard let bundleID = app.bundleIdentifier, let pending = state.pendingApps[bundleID] else { return }
         adoptTasks[bundleID]?.cancel()
-        adoptTasks[bundleID] = Task { [weak self] in
+        adoptTasks[bundleID] = Task {
             // Windows usually appear shortly after didLaunch; give slow apps a few seconds.
             for _ in 0..<20 {
-                guard let self, !Task.isCancelled, !app.isTerminated else { return }
+                guard !Task.isCancelled, !app.isTerminated else { return }
                 let windows = AXWindow.windows(of: app.processIdentifier).filter(\.isManageable)
                 if !windows.isEmpty {
                     adopt(windows, bundleID: bundleID, pending: pending)
@@ -298,8 +300,10 @@ final class WorkspaceEngine {
             Log.engine.info("launching \(bundleID, privacy: .public) for workspace \(workspaceID)")
             let configuration = NSWorkspace.OpenConfiguration()
             configuration.activates = false
-            NSWorkspace.shared.openApplication(at: url, configuration: configuration) { _, error in
-                if let error {
+            Task {
+                do {
+                    try await NSWorkspace.shared.openApplication(at: url, configuration: configuration)
+                } catch {
                     Log.engine.error("failed to launch \(bundleID, privacy: .public): \(error.localizedDescription, privacy: .public)")
                 }
             }
@@ -354,7 +358,18 @@ final class WorkspaceEngine {
         }
     }
 
+    // State changes on every app switch and every keystroke in a name field; coalesce the disk writes.
     private func save() {
+        saveTask?.cancel()
+        saveTask = Task {
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            store.save(state)
+        }
+    }
+
+    private func saveNow() {
+        saveTask?.cancel()
         store.save(state)
     }
 }
