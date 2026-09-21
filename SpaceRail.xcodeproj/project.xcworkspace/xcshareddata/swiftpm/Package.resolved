@@ -1,13 +1,13 @@
 {
-  "originHash" : "27b9a76f8c8ff2c2e5553144c54090879ec0ebb0742d0bffb6291281613970db",
+  "originHash" : "69c39523ac0471922b625cc56b8722155cfd2afd660bdd4f5ff67335b5b87714",
   "pins" : [
     {
-      "identity" : "cgeventsupervisor",
+      "identity" : "keyboardshortcuts",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/stephancasas/CGEventSupervisor",
+      "location" : "https://github.com/sindresorhus/KeyboardShortcuts",
       "state" : {
-        "branch" : "main",
-        "revision" : "d20d7aa8e008a1cc8dd2e26b027118a0fcfc2f96"
+        "revision" : "772133d9dbe800fdac0473226822994c5c162c58",
+        "version" : "3.1.0"
       }
     }
   ],

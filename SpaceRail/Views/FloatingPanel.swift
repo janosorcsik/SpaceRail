@@ -1,14 +1,12 @@
-//
-//  FloatingPanel.swift
-//  SpaceRail
-//
-//  Created by János Orcsik on 2025. 10. 30..
-//
-
 import SwiftUI
 
-class FloatingPanel: NSPanel {
+final class FloatingPanel: NSPanel {
+    private let hostingView: NSHostingView<AnyView>
+
     init(view: () -> some View) {
+        hostingView = NSHostingView(rootView: AnyView(view()))
+        hostingView.sizingOptions = [.preferredContentSize]
+
         super.init(
             contentRect: NSRect(),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -17,32 +15,57 @@ class FloatingPanel: NSPanel {
         )
 
         isFloatingPanel = true
-        level = .floating
+        level = .statusBar
         backgroundColor = .clear
-        collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+        isOpaque = false
+        hasShadow = true
+        ignoresMouseEvents = true
+        hidesOnDeactivate = false
+        isReleasedWhenClosed = false
+        animationBehavior = .none
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+        setAccessibilitySubrole(.unknown)
 
-        contentView = NSHostingView(rootView: view())
+        contentView = hostingView
+
+        // Content drives the size (preferredContentSize); keep it centred whenever that changes.
+        NotificationCenter.default.addObserver(self, selector: #selector(recenter), name: NSWindow.didResizeNotification, object: self)
     }
 
     func showPanel() {
-        // Always read the current screen size to handle resolution change
-        guard let screenFrame = NSScreen.main?.frame else {
-            return
+        if !isVisible {
+            alphaValue = 0
+            orderFrontRegardless()
         }
+        hostingView.layoutSubtreeIfNeeded()
+        recenter()
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.15
+            animator().alphaValue = 1
+        }
+    }
 
-        let newFrame = NSRect(
-            x: 0,
-            y: 0,
-            width: screenFrame.width,
-            height: screenFrame.height - NSStatusBar.system.thickness
+    // Slightly above centre reads better than dead centre, like the system volume/brightness HUD.
+    @objc private func recenter() {
+        guard let screen = NSScreen.main?.visibleFrame else { return }
+        let size = frame.size
+        let origin = NSPoint(
+            x: (screen.midX - size.width / 2).rounded(),
+            y: (screen.midY - size.height / 2 + screen.height * 0.08).rounded()
         )
-
-        setFrame(newFrame, display: true)
-
-        orderFront(self)
+        if frame.origin != origin { setFrameOrigin(origin) }
     }
 
     func hidePanel() {
-        orderOut(self)
+        guard isVisible else { return }
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.2
+            animator().alphaValue = 0
+        }, completionHandler: { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.alphaValue == 0 else { return }
+                self.orderOut(nil)
+            }
+        })
     }
 }

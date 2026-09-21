@@ -1,36 +1,55 @@
-//
-//  MenuContentView.swift
-//  SpaceRail
-//
-//  Created by János Orcsik on 2025. 11. 04..
-//
-
+import KeyboardShortcuts
 import SwiftUI
 
 struct MenuContentView: View {
-    var model = WorkspaceService.shared.model
+    let controller: AppController
+    @Environment(\.openSettings) private var openSettings
+
+    private var engine: WorkspaceEngine { controller.engine }
 
     var body: some View {
-        ForEach(model.workspaces) { workspace in
-            Button {
-                WorkspaceService.shared.setSelectedWorkspace(to: workspace.id)
-            } label: {
-                Text("Workspace \(workspace.id)")
-                if model.selectedWorkspaceId == workspace.id {
-                    Image(systemName: "checkmark")
-                }
+        if !engine.isRunning {
+            Button("Allow Accessibility Access…") {
+                controller.openAccessibilitySettings()
             }
-            .keyboardShortcut(
-                KeyEquivalent(Character("\(workspace.id)")),
-                modifiers: [.control, .option])
+            Divider()
         }
+
+        ForEach(engine.state.workspaces) { workspace in
+            Toggle(isOn: Binding(
+                get: { engine.state.selectedID == workspace.id },
+                set: { _ in engine.switchTo(workspace.id) }
+            )) {
+                Text(title(for: workspace))
+            }
+            .disabled(!engine.isRunning)
+            // Display only: the app is never active, so this never fires; the Carbon hotkey does.
+            .keyboardShortcut(KeyboardShortcuts.getShortcut(for: .switchTo(workspace.id))?.toSwiftUI)
+        }
+
         Divider()
-        Button("Quit") {
+
+        Button("Show HUD") {
+            controller.toggleHUD()
+        }
+        .keyboardShortcut(KeyboardShortcuts.getShortcut(for: .showHUD)?.toSwiftUI)
+
+        Button("Settings…") {
+            NSApp.activate()
+            openSettings()
+        }
+        .keyboardShortcut(",")
+
+        Divider()
+
+        Button("Quit SpaceRail") {
             NSApplication.shared.terminate(nil)
         }
+        .keyboardShortcut("q")
     }
-}
 
-#Preview {
-    MenuContentView()
+    private func title(for workspace: Workspace) -> String {
+        let count = workspace.windows.count
+        return count == 0 ? workspace.name : "\(workspace.name) — \(count) \(count == 1 ? "window" : "windows")"
+    }
 }
