@@ -1,6 +1,6 @@
 # SpaceRail — átdolgozási terv
 
-**Állapot:** 2026-09-21. Döntések lezárva, implementáció előtt. Az `ISSUES.md` a jelenlegi kód hibáit tartalmazza; ez a dokumentum azt, hogy **mi lesz helyette**. Ahol a két doksi ellentmond, ez a mérvadó — az `ISSUES.md`-ben az elévült pontok meg vannak jelölve.
+**Állapot:** 2026-09-21. **Implementálva** a `window-workspaces` branchen (D1–D20). A Sorrend fejezet lépései lefutottak; ami nyitott, a Későbbre listán van. Az `ISSUES.md` a jelenlegi kód hibáit tartalmazza; ez a dokumentum azt, hogy **mi lesz helyette**. Ahol a két doksi ellentmond, ez a mérvadó — az `ISSUES.md`-ben az elévült pontok meg vannak jelölve.
 
 **Referenciák:** `/Users/janosorcsik/Developer/mycast` (Platform réteg, egy az egyben átvehető fájlok), `/Users/janosorcsik/Developer/cosmos` (`AXClient.swift` — AX-recept), `/Users/janosorcsik/Developer/winmux` (`MacApp.swift` — fókusz-recept).
 
@@ -52,6 +52,10 @@ Ezek a beszélgetésben lezárt kérdések; nem nyitjuk újra, csak ha a protot�
 | D14 | Workspace-lista | **Dinamikus**: 3-mal indul, Settingsben ⊕/⊖. Az ID-k sosem kerülnek újrafelhasználásra (tárolt shortcut ne szivárogjon át). Új workspace default shortcutja a pozíciója szerinti szám (1–9), ha van. Törléskor a shortcutja törlődik, az ablakai szabadok lesznek. |
 | D15 | Workspace-név | Szerkeszthető a Settings táblázatában, a HUD és a menü ezt mutatja. Alapból a pozíció száma. |
 | D16 | HIG | Settings: toolbar-tabok (General / Workspaces), `Table` + ⊕/⊖ `ControlGroup` a lista alatt (kijelölés-alapú), fix méret. Menü: `Toggle` pipa, a hotkey megjelenítve a menüelemen (csak kijelzés — a Carbon hotkey fut). |
+| D17 | Hiányzó appok | Váltáskor (és induláskor) a workspace-hez tartozó, nem futó appokat **elindítjuk** (`openApplication`, `activates = false`), adoptáljuk, a helyükre tesszük és előre hozzuk. A HUD-on halványan látszanak, amíg nem futnak. A workspace = layout; a váltás visszahozza. |
+| D18 | HUD-animáció | **Nincs belépő animáció** (billentyű-akció, naponta sokszor — a fade késleltetésnek érződne). Kilépés 120 ms ease-out (rendszer-akció az auto-hide; ne tűnjön el törötten). Kijelölés-váltás azonnali. Reduce Motion → fade kihagyva. Increase Contrast → kártyakontúr. |
+| D19 | Törlés-megerősítés | Workspace törlésénél **csak akkor** kérdezünk, ha van benne ablak vagy pending app. Üres workspace egy kattintásra megy. |
+| D20 | Induláskori visszaállítás | `start()` végén `switchTo(selectedID)`: nem csak a kijelölést, a layoutot is visszaállítja. Adoptálás után a frame-eket 0,3 / 1 / 2,5 s-nál újraellenőrizzük, mert az appok a saját restore-jukkal felülírják. Snapshot minden app-váltásnál, HUD-nyitásnál, kilépésnél — nem csak elváltáskor. |
 | D11 | Appon belüli ablakváltás (cmd+`) követése | **V1-ben nem.** AXObserver-t igényel appokként; az app-szintű aktiválás lefedi a gyakori eseteket. Lásd Későbbre. |
 
 ---
@@ -280,6 +284,8 @@ A 0. lépés két kérdése. Egyiket sem lehet doksiból eldönteni, csak a gép
 
 Nem v1, de a modell úgy készül, hogy ezek ráépülhessenek.
 
+- **Hibavisszajelzés társításnál**: ha a fókuszált ablak nem társítható (sheet, dialógus, nem mozgatható), most csak `beep` — egy rövid üzenet a HUD-on megmondaná, *miért*.
+- **Swift Testing target** a `WorkspaceState`-re: tiszta value type, a MRU-mozgatás, `remove`/`update`, pending-szabály AX nélkül tesztelhető.
 - **AXObserver appokként** `kAXFocusedWindowChangedNotification`-re (D11): cmd+` ugyanazon app másik workspace-ablakára → auto-váltás; MRU pontosabb. Cosmos `AXApplicationObserverRegistry.swift` másolható (~80 sor + lifecycle).
 - **Settings bővítés:** workspace-ek átnevezése (a HUD-on név a szám mellett), HUD auto-hide időzítő, workspace-szám korlátozása.
 - **"x" a HUD ikonján** leválasztáshoz — ehhez `ignoresMouseEvents = false` kell a HUD-on, és a HUD-nak interaktívvá kell válnia. A toggle-alapú megjelenés (D12) ezt már **nem** zárja ki, ez a hold elvetésének mellékhaszna.
