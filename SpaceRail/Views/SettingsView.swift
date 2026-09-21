@@ -71,8 +71,25 @@ private struct GeneralSettingsView: View {
 private struct WorkspacesSettingsView: View {
     let controller: AppController
     @State private var selection: Workspace.ID?
+    @State private var workspaceToRemove: Workspace?
 
     private var engine: WorkspaceEngine { controller.engine }
+
+    // Only ask when there is something to lose: an empty workspace just goes.
+    private func requestRemoval(of id: Workspace.ID) {
+        guard let workspace = engine.state.workspace(id) else { return }
+        let hasPending = engine.state.pendingApps.values.contains { $0.workspaceID == id }
+        if workspace.windows.isEmpty && !hasPending {
+            remove(workspace)
+        } else {
+            workspaceToRemove = workspace
+        }
+    }
+
+    private func remove(_ workspace: Workspace) {
+        controller.removeWorkspace(workspace.id)
+        selection = nil
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -106,9 +123,7 @@ private struct WorkspacesSettingsView: View {
                     .accessibilityLabel("Add workspace")
 
                     Button {
-                        guard let selection else { return }
-                        controller.removeWorkspace(selection)
-                        self.selection = nil
+                        if let selection { requestRemoval(of: selection) }
                     } label: {
                         Image(systemName: "minus")
                     }
@@ -116,6 +131,19 @@ private struct WorkspacesSettingsView: View {
                     .accessibilityLabel("Remove workspace")
                 }
                 .fixedSize()
+                .confirmationDialog(
+                    "Remove “\(workspaceToRemove?.name ?? "")”?",
+                    isPresented: Binding(
+                        get: { workspaceToRemove != nil },
+                        set: { if !$0 { workspaceToRemove = nil } }
+                    ),
+                    titleVisibility: .visible,
+                    presenting: workspaceToRemove
+                ) { workspace in
+                    Button("Remove Workspace", role: .destructive) { remove(workspace) }
+                } message: { workspace in
+                    Text("Its \(workspace.windows.count) windows stay open but will no longer be grouped, and its shortcuts are cleared.")
+                }
 
                 Text("Switch brings the workspace's windows to the front. Attach toggles the focused window in or out of it.")
                     .font(.callout)

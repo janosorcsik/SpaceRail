@@ -28,6 +28,8 @@ private struct WorkspaceCard: View {
     let isSelected: Bool
     let shortcut: String?
 
+    @Environment(\.colorSchemeContrast) private var contrast
+
     private static let iconSize: CGFloat = 40
     private static let columns = Array(repeating: GridItem(.fixed(iconSize), spacing: 8), count: 3)
 
@@ -90,11 +92,17 @@ private struct WorkspaceCard: View {
                 .fill(isSelected ? Color.accentColor.opacity(0.22) : Color.primary.opacity(0.06))
         }
         .overlay {
+            // Increase Contrast: tint alone isn't enough to separate cards, give every card an edge.
             RoundedRectangle(cornerRadius: 16)
-                .strokeBorder(isSelected ? Color.accentColor : .clear, lineWidth: 2)
+                .strokeBorder(borderColor, lineWidth: isSelected ? 2 : 1)
         }
         .foregroundStyle(isSelected ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
         // Selection follows a keystroke; the highlight must be there on the same frame, not 150 ms later.
+    }
+
+    private var borderColor: Color {
+        if isSelected { return .accentColor }
+        return contrast == .increased ? Color.primary.opacity(0.4) : .clear
     }
 }
 
