@@ -20,6 +20,7 @@ struct SettingsView: View {
 
 private struct GeneralSettingsView: View {
     @AppStorage(AppController.hudAutoHideKey) private var hudAutoHide = AppController.hudAutoHideDefault
+    @AppStorage(AppController.hudFlashOnSwitchKey) private var hudFlashOnSwitch = true
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @State private var launchAtLoginError: String?
 
@@ -46,6 +47,7 @@ private struct GeneralSettingsView: View {
                     Text("3 seconds").tag(3.0)
                     Text("5 seconds").tag(5.0)
                 }
+                Toggle("Show briefly when switching workspaces", isOn: $hudFlashOnSwitch)
             }
         }
         .formStyle(.grouped)
@@ -104,7 +106,7 @@ private struct WorkspacesSettingsView: View {
                 }
                 .width(150)
 
-                TableColumn("Attach") { workspace in
+                TableColumn("Add / remove") { workspace in
                     KeyboardShortcuts.Recorder(for: .toggle(workspace.id))
                 }
                 .width(150)
@@ -145,7 +147,7 @@ private struct WorkspacesSettingsView: View {
                     Text("Its \(workspace.windows.count) windows stay open but will no longer be grouped, and its shortcuts are cleared.")
                 }
 
-                Text("Switch brings the workspace's windows to the front. Attach toggles the focused window in or out of it.")
+                Text("Switch brings the workspace's windows to the front. Add / remove puts the focused window into the workspace, or takes it out again.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }

@@ -1,0 +1,48 @@
+name: SpaceRail
+configFiles:
+  Debug: Config.xcconfig
+  Release: Config.xcconfig
+options:
+  bundleIdPrefix: com.janosorcsik
+  deploymentTarget:
+    macOS: "26.0"
+  xcodeVersion: "26.0"
+  createIntermediateGroups: true
+
+packages:
+  KeyboardShortcuts:
+    url: https://github.com/sindresorhus/KeyboardShortcuts
+    exactVersion: 3.1.0
+
+targets:
+  SpaceRail:
+    type: application
+    platform: macOS
+    sources:
+      - path: SpaceRail
+    dependencies:
+      - package: KeyboardShortcuts
+    info:
+      path: SpaceRail/Info.plist
+      properties:
+        CFBundleDisplayName: $(PRODUCT_NAME)
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSApplicationCategoryType: public.app-category.utilities
+        LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
+        # Menu bar app: no Dock icon, no ⌘-tab entry, stays .accessory so it can own windows.
+        LSUIElement: true
+        NSHumanReadableCopyright: ""
+    settings:
+      base:
+        PRODUCT_NAME: SpaceRail
+        PRODUCT_BUNDLE_IDENTIFIER: com.janosorcsik.SpaceRail
+      configs:
+        # The dev build runs next to the installed one: own name, bundle ID, TCC grant, defaults
+        # and state directory (see AppProfile).
+        Debug:
+          PRODUCT_NAME: SpaceRail Dev
+          PRODUCT_BUNDLE_IDENTIFIER: com.janosorcsik.SpaceRail.debug
+    scheme:
+      testTargets: []
+      gatherCoverageData: false

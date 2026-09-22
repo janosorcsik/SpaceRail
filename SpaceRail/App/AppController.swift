@@ -7,28 +7,43 @@ import os
 final class AppController {
     static let hudAutoHideKey = "hudAutoHideSeconds"
     static let hudAutoHideDefault: Double = 2
+    static let hudFlashOnSwitchKey = "hudFlashOnSwitch"
+    private static let welcomedKey = "didShowWelcome"
+    // Long enough to read the highlighted card, short enough not to feel like a window.
+    private static let flashDuration: Duration = .seconds(1)
 
     let engine = WorkspaceEngine()
 
     @ObservationIgnored private var panel: FloatingPanel?
     @ObservationIgnored private var hideTask: Task<Void, Never>?
+    @ObservationIgnored private var hideDeadline: ContinuousClock.Instant?
+    @ObservationIgnored private let toastModel = ToastModel()
+    @ObservationIgnored private var toastPanel: FloatingPanel?
+    @ObservationIgnored private var toastTask: Task<Void, Never>?
     @ObservationIgnored private var permissionTask: Task<Void, Never>?
     @ObservationIgnored private var registeredWorkspaceIDs: Set<Int> = []
 
     init() {
-        UserDefaults.standard.register(defaults: [Self.hudAutoHideKey: Self.hudAutoHideDefault])
+        UserDefaults.standard.register(defaults: [
+            Self.hudAutoHideKey: Self.hudAutoHideDefault,
+            Self.hudFlashOnSwitchKey: true,
+        ])
 
         for (position, workspace) in engine.state.workspaces.enumerated() {
-            if engine.createdDefaultState {
-                KeyboardShortcuts.installDefaults(for: workspace, position: position)
-            }
+            KeyboardShortcuts.installDefaultsIfNeeded(for: workspace, position: position)
             registerShortcuts(for: workspace.id)
         }
         KeyboardShortcuts.onKeyDown(for: .showHUD) { [weak self] in
             self?.toggleHUD()
         }
 
-        startWhenTrusted()
+        engine.onFeedback = { [weak self] feedback in
+            self?.handle(feedback)
+        }
+
+        // Starting the engine can emit feedback and open panels; that must not happen while the
+        // SwiftUI scene that owns this object is still being built.
+        Task { startWhenTrusted() }
     }
 
     // MARK: - Workspaces
@@ -36,7 +51,7 @@ final class AppController {
     @discardableResult
     func addWorkspace() -> Workspace {
         let workspace = engine.addWorkspace()
-        KeyboardShortcuts.installDefaults(for: workspace, position: engine.state.workspaces.count - 1)
+        KeyboardShortcuts.installDefaultsIfNeeded(for: workspace, position: engine.state.workspaces.count - 1)
         registerShortcuts(for: workspace.id)
         return workspace
     }
@@ -44,6 +59,39 @@ final class AppController {
     func removeWorkspace(_ id: Int) {
         engine.removeWorkspace(id)
         KeyboardShortcuts.forget(workspaceID: id)
+    }
+
+    // MARK: - Feedback
+
+    private func handle(_ feedback: Feedback) {
+        switch feedback {
+        case .switched:
+            // The HUD itself is the confirmation: the target card lights up.
+            if panel?.isVisible == true {
+                scheduleHUDHide()
+            } else if UserDefaults.standard.bool(forKey: Self.hudFlashOnSwitchKey) {
+                showHUD(for: Self.flashDuration)
+            }
+        default:
+            showToast(feedback)
+        }
+    }
+
+    private func showToast(_ feedback: Feedback) {
+        // A hint is there to be read; don't let a passing confirmation replace it.
+        if case .hint = toastModel.feedback, toastPanel?.isVisible == true, !feedback.isRefusal { return }
+        if toastPanel == nil {
+            toastPanel = FloatingPanel(placement: .bottom) { [toastModel] in ToastView(model: toastModel) }
+        }
+        toastModel.feedback = feedback
+        toastPanel?.showPanel()
+
+        toastTask?.cancel()
+        toastTask = Task { [weak self] in
+            try? await Task.sleep(for: feedback.duration)
+            guard !Task.isCancelled else { return }
+            self?.toastPanel?.hidePanel()
+        }
     }
 
     // MARK: - HUD
@@ -56,7 +104,8 @@ final class AppController {
         }
     }
 
-    func showHUD() {
+    // Without a duration the user's auto-hide setting applies; with one, it's a flash.
+    func showHUD(for duration: Duration? = nil) {
         if panel == nil {
             panel = FloatingPanel { [engine] in HUDView(engine: engine) }
         }
@@ -64,22 +113,33 @@ final class AppController {
         if engine.isRunning { engine.snapshotSelectedWorkspace() }
         AppIconService.shared.prefetch(engine.state.workspaces.flatMap(\.bundleIDs))
         panel?.showPanel()
-        scheduleHUDHide()
+        scheduleHUDHide(after: duration)
     }
 
     func hideHUD() {
         hideTask?.cancel()
+        hideDeadline = nil
         panel?.hidePanel()
     }
 
-    // Every user action restarts the countdown; 0 means it stays until toggled.
-    private func scheduleHUDHide() {
-        hideTask?.cancel()
+    // Every user action restarts the countdown; a setting of 0 means it stays until toggled.
+    // A countdown never shortens one already running, so a welcome or flash isn't cut off.
+    private func scheduleHUDHide(after duration: Duration? = nil) {
         let seconds = UserDefaults.standard.double(forKey: Self.hudAutoHideKey)
-        guard seconds > 0 else { return }
+        let delay = duration ?? (seconds > 0 ? .seconds(seconds) : nil)
+        guard let delay else {
+            hideTask?.cancel()
+            hideDeadline = nil
+            return
+        }
+        let deadline = ContinuousClock.now + delay
+        if let hideDeadline, hideDeadline > deadline { return }
+        hideTask?.cancel()
+        hideDeadline = deadline
         hideTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(seconds))
+            try? await Task.sleep(until: deadline)
             guard !Task.isCancelled else { return }
+            self?.hideDeadline = nil
             self?.panel?.hidePanel()
         }
     }
@@ -97,7 +157,7 @@ final class AppController {
     // so no restart is needed after granting.
     private func startWhenTrusted() {
         if Permissions.ensureAccessibility(prompt: true) {
-            engine.start()
+            start()
             return
         }
         Log.engine.notice("waiting for Accessibility permission")
@@ -106,8 +166,25 @@ final class AppController {
                 try? await Task.sleep(for: .seconds(1))
                 guard !Task.isCancelled else { return }
             }
-            engine.start()
+            start()
         }
+    }
+
+    // Once: show where things are and the one gesture that matters. Goes up before the engine
+    // starts talking, and a hint isn't replaced by the confirmations that follow.
+    private func start() {
+        welcomeIfFirstRun()
+        engine.start()
+    }
+
+    private func welcomeIfFirstRun() {
+        guard !UserDefaults.standard.bool(forKey: Self.welcomedKey) else { return }
+        UserDefaults.standard.set(true, forKey: Self.welcomedKey)
+        guard let first = engine.state.workspaces.first else { return }
+
+        showHUD(for: .seconds(8))
+        let shortcut = KeyboardShortcuts.getShortcut(for: .toggle(first.id))?.description ?? "the Add / remove shortcut"
+        showToast(.hint("Press \(shortcut) in any window to add it to workspace “\(first.name)”. Shortcuts and names are in Settings."))
     }
 
     // MARK: - Shortcuts
@@ -119,10 +196,7 @@ final class AppController {
         registeredWorkspaceIDs.insert(id)
 
         KeyboardShortcuts.onKeyDown(for: .switchTo(id)) { [weak self] in
-            self?.whenRunning { engine in
-                engine.switchTo(id)
-                if self?.panel?.isVisible == true { self?.scheduleHUDHide() }
-            }
+            self?.whenRunning { $0.switchTo(id) }
         }
         KeyboardShortcuts.onKeyDown(for: .toggle(id)) { [weak self] in
             self?.whenRunning { engine in
@@ -134,7 +208,7 @@ final class AppController {
 
     private func whenRunning(_ action: (WorkspaceEngine) -> Void) {
         guard engine.isRunning else {
-            NSSound.beep()
+            showToast(.refused(.noPermission))
             return
         }
         action(engine)

@@ -1,9 +1,18 @@
 import SwiftUI
 
 final class FloatingPanel: NSPanel {
-    private let hostingView: NSHostingView<AnyView>
+    enum Placement {
+        // Slightly above centre, like the system volume/brightness HUD.
+        case center
+        // Just above the Dock, where a one-line confirmation sits without covering work.
+        case bottom
+    }
 
-    init(view: () -> some View) {
+    private let hostingView: NSHostingView<AnyView>
+    private let placement: Placement
+
+    init(placement: Placement = .center, view: () -> some View) {
+        self.placement = placement
         hostingView = NSHostingView(rootView: AnyView(view()))
         hostingView.sizingOptions = [.preferredContentSize]
 
@@ -40,14 +49,14 @@ final class FloatingPanel: NSPanel {
         recenter()
     }
 
-    // Slightly above centre reads better than dead centre, like the system volume/brightness HUD.
     @objc private func recenter() {
         guard let screen = NSScreen.main?.visibleFrame else { return }
         let size = frame.size
-        let origin = NSPoint(
-            x: (screen.midX - size.width / 2).rounded(),
-            y: (screen.midY - size.height / 2 + screen.height * 0.08).rounded()
-        )
+        let y: CGFloat = switch placement {
+        case .center: screen.midY - size.height / 2 + screen.height * 0.08
+        case .bottom: screen.minY + 48
+        }
+        let origin = NSPoint(x: (screen.midX - size.width / 2).rounded(), y: y.rounded())
         if frame.origin != origin { setFrameOrigin(origin) }
     }
 

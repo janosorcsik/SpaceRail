@@ -31,13 +31,19 @@ Settings lets you rename workspaces, add and remove them, record any shortcut pe
 
 ## Build
 
-Open `SpaceRail.xcodeproj` in Xcode 26 and run, or:
+The Xcode project is generated with [XcodeGen](https://github.com/yonaskolb/XcodeGen) from `project.yml`; shared settings live in `Config.xcconfig`.
 
 ```sh
-xcodebuild -project SpaceRail.xcodeproj -scheme SpaceRail -configuration Debug -destination 'platform=macOS' build
+brew install xcodegen
+make run        # build the dev app ("SpaceRail Dev", own bundle ID) and launch it
+make install    # archive Release and install to /Applications
+make logs       # stream the app's logs
+make help       # everything else
 ```
 
-The only dependency is [KeyboardShortcuts](https://github.com/sindresorhus/KeyboardShortcuts) (Carbon hotkeys — no event tap, works under Secure Input). Debug builds use a separate bundle identifier and state directory so they don't touch a release install.
+`make generate` alone produces `SpaceRail.xcodeproj` for working in Xcode. The dev build has its own bundle identifier, Accessibility grant, shortcuts and state directory, so it runs side by side with the installed app.
+
+The only dependency is [KeyboardShortcuts](https://github.com/sindresorhus/KeyboardShortcuts) (Carbon hotkeys — no event tap, works under Secure Input).
 
 ## Design notes
 

@@ -6,8 +6,8 @@ import os
 final class WorkspaceEngine {
     private(set) var state: WorkspaceState
     private(set) var isRunning = false
-    // True when no state file existed yet; the caller installs default shortcuts in that case.
-    let createdDefaultState: Bool
+    // The one seam to the UI: every confirmation, refusal and self-initiated action goes through here.
+    @ObservationIgnored var onFeedback: ((Feedback) -> Void)?
 
     private let store: StateStore
     // Our own activate() calls fire didActivateApplication too; ignore those.
@@ -18,13 +18,7 @@ final class WorkspaceEngine {
 
     init(store: StateStore = StateStore()) {
         self.store = store
-        if let loaded = store.load() {
-            state = loaded
-            createdDefaultState = false
-        } else {
-            state = WorkspaceState()
-            createdDefaultState = true
-        }
+        state = store.load() ?? WorkspaceState()
     }
 
     func start() {
@@ -99,6 +93,7 @@ final class WorkspaceEngine {
         }
 
         launchPendingApps(for: id)
+        onFeedback?(.switched(workspace: target.name))
 
         switchTask?.cancel()
         switchTask = Task {
@@ -140,23 +135,28 @@ final class WorkspaceEngine {
         guard let target = state.workspace(id) else { return }
         guard let app = NSWorkspace.shared.frontmostApplication,
               let bundleID = app.bundleIdentifier,
-              let window = AXWindow.focusedWindow(of: app.processIdentifier),
-              window.isManageable,
-              let frame = window.frame
+              let window = AXWindow.focusedWindow(of: app.processIdentifier)
         else {
-            NSSound.beep()
+            onFeedback?(.refused(.noFocusedWindow))
+            return
+        }
+        guard window.isManageable, let frame = window.frame else {
+            onFeedback?(.refused(.notAWindow))
             return
         }
 
+        let appName = app.localizedName ?? AppIconService.shared.name(for: bundleID)
         let alreadyThere = target.windows.contains { $0.windowID == window.id }
         state.remove(windowID: window.id)
         if alreadyThere {
             Log.engine.info("detached \(bundleID, privacy: .public) window \(window.id) from workspace \(id)")
+            onFeedback?(.removed(app: appName, workspace: target.name))
         } else {
             let slot = WindowSlot(windowID: window.id, bundleID: bundleID, frame: frame)
             state.update(id) { $0.windows.insert(slot, at: 0) }
             AppIconService.shared.prefetch([bundleID])
             Log.engine.info("attached \(bundleID, privacy: .public) window \(window.id) to workspace \(id)")
+            onFeedback?(.added(app: appName, workspace: target.name))
         }
         save()
     }
@@ -192,6 +192,9 @@ final class WorkspaceEngine {
             save()
         } else {
             Log.engine.info("focused window \(window.id) belongs to workspace \(workspaceID), following")
+            if let target = state.workspace(workspaceID) {
+                onFeedback?(.following(app: app.localizedName ?? "window", workspace: target.name))
+            }
             switchTo(workspaceID)
         }
     }
@@ -259,6 +262,9 @@ final class WorkspaceEngine {
         AppIconService.shared.prefetch([bundleID])
         save()
         Log.engine.info("adopted \(slots.count) \(bundleID, privacy: .public) windows into workspace \(pending.workspaceID)")
+        if let target = state.workspace(pending.workspaceID) {
+            onFeedback?(.returned(app: AppIconService.shared.name(for: bundleID), workspace: target.name))
+        }
         enforceFrames(of: slots)
 
         if pending.workspaceID == state.selectedID, let pid = windows.first?.pid {
@@ -298,6 +304,7 @@ final class WorkspaceEngine {
             let running = NSWorkspace.shared.runningApplications.contains { $0.bundleIdentifier == bundleID }
             guard !running, let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { continue }
             Log.engine.info("launching \(bundleID, privacy: .public) for workspace \(workspaceID)")
+            onFeedback?(.launching(app: AppIconService.shared.name(for: bundleID)))
             let configuration = NSWorkspace.OpenConfiguration()
             configuration.activates = false
             Task {

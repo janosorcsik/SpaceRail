@@ -19,9 +19,15 @@ extension KeyboardShortcuts.Name {
 extension KeyboardShortcuts {
     private static let digits: [Key] = [.one, .two, .three, .four, .five, .six, .seven, .eight, .nine]
 
-    // Called once when a workspace is created: ⌃⌥⌘<n> / ⌃⌥⌘⇧<n> by position, if the position has a digit.
-    static func installDefaults(for workspace: Workspace, position: Int) {
+    // ⌃⌥⌘<n> / ⌃⌥⌘⇧<n> by position, if the position has a digit. Runs once per workspace per
+    // defaults domain (a marker in UserDefaults), so a shortcut the user cleared on purpose stays
+    // cleared, while a fresh install or a bundle-ID change still gets the defaults.
+    static func installDefaultsIfNeeded(for workspace: Workspace, position: Int) {
+        let marker = seededKey(workspace.id)
+        guard !UserDefaults.standard.bool(forKey: marker) else { return }
+        UserDefaults.standard.set(true, forKey: marker)
         guard position < digits.count else { return }
+
         let key = digits[position]
         if getShortcut(for: .switchTo(workspace.id)) == nil {
             setShortcut(.init(key, modifiers: Name.hyper), for: .switchTo(workspace.id))
@@ -33,5 +39,10 @@ extension KeyboardShortcuts {
 
     static func forget(workspaceID: Int) {
         reset(.switchTo(workspaceID), .toggle(workspaceID))
+        UserDefaults.standard.removeObject(forKey: seededKey(workspaceID))
+    }
+
+    private static func seededKey(_ workspaceID: Int) -> String {
+        "shortcutsSeeded-\(workspaceID)"
     }
 }

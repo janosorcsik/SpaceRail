@@ -11,7 +11,8 @@ struct HUDView: View {
                     workspace: workspace,
                     pendingBundleIDs: engine.state.pendingApps.filter { $0.value.workspaceID == workspace.id }.keys.sorted(),
                     isSelected: workspace.id == engine.state.selectedID,
-                    shortcut: KeyboardShortcuts.getShortcut(for: .switchTo(workspace.id))?.description
+                    shortcut: KeyboardShortcuts.getShortcut(for: .switchTo(workspace.id))?.description,
+                    addShortcut: KeyboardShortcuts.getShortcut(for: .toggle(workspace.id))?.description
                 )
             }
         }
@@ -27,6 +28,7 @@ private struct WorkspaceCard: View {
     let pendingBundleIDs: [String]
     let isSelected: Bool
     let shortcut: String?
+    let addShortcut: String?
 
     @Environment(\.colorSchemeContrast) private var contrast
 
@@ -69,18 +71,18 @@ private struct WorkspaceCard: View {
                 RoundedRectangle(cornerRadius: 10)
                     .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
                     .foregroundStyle(.tertiary)
-                    .frame(height: Self.iconSize)
+                    .frame(minHeight: Self.iconSize)
                     .overlay {
-                        Text("No windows")
+                        Text(emptyHint)
                             .font(.caption)
                             .foregroundStyle(.tertiary)
+                            .multilineTextAlignment(.center)
+                            .padding(6)
                     }
             } else {
                 LazyVGrid(columns: Self.columns, alignment: .leading, spacing: 8) {
                     ForEach(apps) { app in
-                        AppIcon(bundleID: app.bundleID, count: app.count, size: Self.iconSize)
-                            .opacity(app.isPending ? 0.35 : 1)
-                            .help(app.isPending ? "\(app.bundleID) — not running, launches on switch" : app.bundleID)
+                        AppIcon(bundleID: app.bundleID, count: app.count, isPending: app.isPending, size: Self.iconSize)
                     }
                 }
             }
@@ -104,14 +106,27 @@ private struct WorkspaceCard: View {
         if isSelected { return .accentColor }
         return contrast == .increased ? Color.primary.opacity(0.4) : .clear
     }
+
+    // The selected card is where the user is looking; tell them the one thing to do next.
+    private var emptyHint: String {
+        if isSelected, let addShortcut { return "Nothing here yet — \(addShortcut) in a window adds it" }
+        return "Nothing here yet"
+    }
 }
 
 private struct AppIcon: View {
     let bundleID: String
     let count: Int
+    let isPending: Bool
     let size: CGFloat
 
     private let icons = AppIconService.shared
+
+    private var tooltip: String {
+        let name = icons.name(for: bundleID)
+        if isPending { return "\(name) will open here" }
+        return count == 1 ? name : "\(name) · \(count) windows"
+    }
 
     var body: some View {
         Group {
@@ -140,6 +155,8 @@ private struct AppIcon: View {
                     .offset(x: 4, y: 4)
             }
         }
-        .help(bundleID)
+        .opacity(isPending ? 0.35 : 1)
+        .help(tooltip)
+        .accessibilityLabel(tooltip)
     }
 }
