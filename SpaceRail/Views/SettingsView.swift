@@ -88,6 +88,20 @@ private struct WorkspacesSettingsView: View {
         }
     }
 
+    private func removalMessage(for workspace: Workspace) -> String {
+        var parts: [String] = []
+        let windows = workspace.windows.count
+        if windows > 0 {
+            parts.append(windows == 1 ? "Its window stays open but will no longer be grouped." : "Its \(windows) windows stay open but will no longer be grouped.")
+        }
+        let pending = engine.state.pendingBundleIDs(in: workspace.id).count
+        if pending > 0 {
+            parts.append(pending == 1 ? "1 app that isn't running won't be reopened here." : "\(pending) apps that aren't running won't be reopened here.")
+        }
+        parts.append("Its shortcuts are cleared.")
+        return parts.joined(separator: " ")
+    }
+
     private func remove(_ workspace: Workspace) {
         controller.removeWorkspace(workspace.id)
         selection = nil
@@ -144,7 +158,7 @@ private struct WorkspacesSettingsView: View {
                 ) { workspace in
                     Button("Remove Workspace", role: .destructive) { remove(workspace) }
                 } message: { workspace in
-                    Text("Its \(workspace.windows.count) windows stay open but will no longer be grouped, and its shortcuts are cleared.")
+                    Text(removalMessage(for: workspace))
                 }
 
                 Text("Switch brings the workspace's windows to the front. Add / remove puts the focused window into the workspace, or takes it out again.")

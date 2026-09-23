@@ -1,6 +1,6 @@
 # SpaceRail — átdolgozási terv
 
-**Állapot:** 2026-09-21. **Implementálva** a `window-workspaces` branchen (D1–D20). A Sorrend fejezet lépései lefutottak; ami nyitott, a Későbbre listán van. Az `ISSUES.md` a jelenlegi kód hibáit tartalmazza; ez a dokumentum azt, hogy **mi lesz helyette**. Ahol a két doksi ellentmond, ez a mérvadó — az `ISSUES.md`-ben az elévült pontok meg vannak jelölve.
+**Állapot:** 2026-09-21. **Implementálva** a `window-workspaces` branchen (D1–D24). A Sorrend fejezet lépései lefutottak; ami nyitott, a Későbbre listán van. Az `ISSUES.md` a jelenlegi kód hibáit tartalmazza; ez a dokumentum azt, hogy **mi lesz helyette**. Ahol a két doksi ellentmond, ez a mérvadó — az `ISSUES.md`-ben az elévült pontok meg vannak jelölve.
 
 **Referenciák:** `/Users/janosorcsik/Developer/mycast` (Platform réteg, egy az egyben átvehető fájlok), `/Users/janosorcsik/Developer/cosmos` (`AXClient.swift` — AX-recept), `/Users/janosorcsik/Developer/winmux` (`MacApp.swift` — fókusz-recept).
 
@@ -42,9 +42,9 @@ Ezek a beszélgetésben lezárt kérdések; nem nyitjuk újra, csak ha a protot�
 | D3 | Nem társított ablakok | Nem bántjuk. Mindenhol látszanak, a workspace ablakai fölé kerülnek. |
 | D4 | Cmd+tab / Dock-kattintás másik workspace ablakára | **Auto-váltás** arra a workspace-re. Nem társított ablaknál semmi. |
 | D5 | Frame | Társításkor és **minden elváltáskor** mentjük; váltáskor visszaállítjuk. "Ahogy hagytad." Nincs folyamatos mozgás-figyelés. |
-| D6 | Reboot / app kilépés | Ablak-ID-k elvesznek → **app-szintű, egyszer használatos szabály**: az app első ablakának megjelenésekor az összes ablaka a (legkisebb sorszámú) workspace-be kerül, a mentett frame-ek sorrendben, best-effort rájuk. Szabály törlődik. |
-| D7 | Több monitor | Nem támogatott külön. Egy globális workspace-készlet. Mentett frame, ami nem esik képernyőre → fő képernyőre igazítva. |
-| D8 | Billentyűk | Alapértelmezés: **⌃⌥⌘+1..9** váltás, **⌃⌥⌘⇧+1..9** társítás/leválasztás, **⌃⌥⌘+0** HUD ki/be. Mind átállítható a Settingsben. Hogy a ⌃⌥⌘-ot mi állítja elő (Caps Lock remap, Karabiner, kézzel), az az appon kívül van. |
+| D6 | Reboot / app kilépés | Ablak-ID-k elvesznek → **app-szintű, egyszer használatos szabály**: ablakonként egy mentett hely (workspace + frame), minden workspace-ből, ahol az app volt. Az app újra megjelenő ablakai sorban elveszik ezeket, mindegyik a saját workspace-ébe és frame-jére. Legfeljebb annyi ablak kerül vissza, ahány mentve volt; a többi szabad marad. A gyűjtés ~10 s-ig tart (az appok egyenként állítják vissza az ablakaikat), utána a szabály törlődik. |
+| D7 | Több monitor | Nem támogatott külön. Egy globális workspace-készlet. Mentett frame, ami nem esik képernyőre (legalább 100×40 pont látszik belőle) → a fő képernyő közepére, ha kell, összenyomva. A HUD és a toast azon a kijelzőn jelenik meg, ahol a fókuszált ablak van (különben ahol az egér). |
+| D8 | Billentyűk | Alapértelmezés: **⌃⌥⌘+1..9** váltás, **⌃⌥⌘⇧+1..9** társítás/leválasztás, **⌃⌥⌘+H** HUD ki/be (betű, nem szám: nem-US kiosztáson a 0 helye más billentyű). Mind átállítható a Settingsben. Hogy a ⌃⌥⌘-ot mi állítja elő (Caps Lock remap, Karabiner, kézzel), az az appon kívül van. |
 | D9 | Settings ablak | **V1-ben.** Shortcut-szerkesztő (KeyboardShortcuts `Recorder`), launch at login. Semmi más. |
 | D10 | HUD tartalma | Csak app-ikon, ablakonként. Nincs cím, nincs ablak-előnézet (screen recording engedélyt nem kérünk). |
 | D12 | HUD megjelenítés | **Saját shortcut, toggle**, alapból **2 s után magától eltűnik** (Settings: Never / 1 / 2 / 3 / 5 s). Minden hotkey-akció újraindítja a számlálót. Nincs modifier-tartás figyelés — így nincs event tap, nincs global monitor. |
@@ -56,6 +56,10 @@ Ezek a beszélgetésben lezárt kérdések; nem nyitjuk újra, csak ha a protot�
 | D18 | HUD-animáció | **Nincs belépő animáció** (billentyű-akció, naponta sokszor — a fade késleltetésnek érződne). Kilépés 120 ms ease-out (rendszer-akció az auto-hide; ne tűnjön el törötten). Kijelölés-váltás azonnali. Reduce Motion → fade kihagyva. Increase Contrast → kártyakontúr. |
 | D19 | Törlés-megerősítés | Workspace törlésénél **csak akkor** kérdezünk, ha van benne ablak vagy pending app. Üres workspace egy kattintásra megy. |
 | D20 | Induláskori visszaállítás | `start()` végén `switchTo(selectedID)`: nem csak a kijelölést, a layoutot is visszaállítja. Adoptálás után a frame-eket 0,3 / 1 / 2,5 s-nál újraellenőrizzük, mert az appok a saját restore-jukkal felülírják. Snapshot minden app-váltásnál, HUD-nyitásnál, kilépésnél — nem csak elváltáskor. |
+| D21 | Ablak-ID azonosság | Egy mentett ablak csak akkor él, ha az ID létezik **és ugyanaz az app birtokolja** (bundle ID). Reboot után az ID-k újraindulnak, egy régi ID más app ablakaként jöhet vissza. Induláskor az az app is pending lesz, amelyik fut, de egyik mentett ablaka sem él (login itemként előttünk indult) — és azonnal adoptáljuk. |
+| D22 | Állapotfájl | Hiányzó mező nem teszi olvashatatlanná a fájlt (minden a workspace-listán kívül alapértéket kap), van `version` mező. Olvashatatlan fájlt félreteszünk (`state.unreadable-<idő>.json`), nem írjuk felül. |
+| D23 | AX timeout | Globális messaging timeout 250 ms (`AXUIElementSetMessagingTimeout` a system-wide elemen). A default ~6 s: egy lefagyott app hívásonként ennyire fagyasztaná a fő szálat és a hotkeyeket. |
+| D24 | Default shortcut | Új workspace a pozíciója szerinti számot kapja, **ha az szabad**; ha nem (törlés után elcsúsznak a pozíciók), az első szabad számot. |
 | D11 | Appon belüli ablakváltás (cmd+`) követése | **V1-ben nem.** AXObserver-t igényel appokként; az app-szintű aktiválás lefedi a gyakori eseteket. Lásd Későbbre. |
 
 ---
@@ -77,11 +81,11 @@ struct Workspace: Codable {
 struct State: Codable {
     var workspaces: [Workspace]
     var selectedID: Int
-    var pendingApps: [String: Int]   // bundleID → workspaceID, D6 szabályok
+    var pendingApps: [String: PendingApp]   // bundleID → ablakonként (workspaceID, frame), D6 szabályok
 }
 ```
 
-Perzisztencia: JSON, `~/Library/Application Support/<AppProfile.dataDirectoryName>/state.json`. Írás minden állapotváltozásnál (a fájl kicsi, nem éri meg debounce-olni). Az `AppProfile` az `ISSUES.md` Gyors nyereségek 2.2 szerint — dev build más mappába ír.
+Perzisztencia: JSON, `~/Library/Application Support/<AppProfile.dataDirectoryName>/state.json`. Írás 500 ms-os debounce-szal, kilépéskor azonnal. Az `AppProfile` az `ISSUES.md` Gyors nyereségek 2.2 szerint — dev build más mappába ír.
 
 Ablak-azonosítás: `_AXUIElementGetWindow(AXUIElement, &CGWindowID)`. Privát, de minden ablakkezelő ezt használja (Cosmos `AXClient.swift:295`, winmux `accessibility.swift:359`, AltTab, Hammerspoon). Deklaráció:
 
@@ -147,13 +151,13 @@ Az ablak nem mozdul, nem tűnik el. A HUD frissül.
 - ha **másik** workspace-en van → váltás oda (a teljes váltás-algoritmus, tehát a workspace többi ablaka is előrejön)
 - ha sehol → semmi
 
-Vigyázat a visszacsatolásra: a saját `activate()` hívásaink is kiváltják ezt a notificationt. Egy `isSwitching` flag alatt a handler ne csináljon semmit.
+Vigyázat a visszacsatolásra: a saját `activate()` hívásaink is kiváltják ezt a notificationt. A saját aktiválásainkat számoljuk (több task is aktiválhat egyszerre: elvetett váltás + új váltás, adoptálás); amíg a számláló > 0, és utána 0,3 s-ig, a handler nem csinál semmit.
 
 ### App-életciklus (D6)
 
-- `didTerminateApplicationNotification` → az app minden ablaka kikerül a workspace-ekből; ha volt bárhol → `pendingApps[bundleID] = legkisebb workspaceID` ahol volt. A frame-ek megmaradnak a szabály mellett (sorrendben), hogy best-effort vissza tudjuk tenni.
-- `didLaunchApplicationNotification` → ha van `pendingApps[bundleID]`: az app ablakai még nem biztos, hogy léteznek. Rövid poll (0.5 s, max ~10 s), amíg `kAXWindowsAttribute` nem üres → minden manageable ablak a workspace-be, mentett frame-ek sorrendben ahány jut. Szabály törlődik.
-- Induláskor: `state.json` betöltés → minden `WindowSlot`-ra ellenőrzés, létezik-e még az ablak (`CGWindowListCopyWindowInfo` ID-k). Ami nem létezik → D6 szerint pending szabállyá alakul. Ami létezik → marad (SpaceRail újraindítása nem veszít semmit, amíg az appok futnak).
+- `didTerminateApplicationNotification` → az app minden ablaka kikerül a workspace-ekből; ha volt bárhol → pending szabály, ablakonként a workspace-szel és a frame-mel (workspace-sorrend, azon belül MRU).
+- `didLaunchApplicationNotification` → ha van `pendingApps[bundleID]`: az app ablakai még nem biztos, hogy léteznek. Poll 0.5 s-onként, max ~10 s: minden új manageable ablak elveszi a következő mentett helyet. Ha minden hely elfogyott, vagy lejárt az idő és jött legalább egy ablak, a szabály törlődik; ha egy sem jött, marad (a következő váltás újrapróbálja).
+- Induláskor: `state.json` betöltés → minden `WindowSlot`-ra ellenőrzés, létezik-e még az ablak és ugyanaz az app birtokolja-e (D21). Ha egy app egyik mentett ablaka sem él → D6 szerint pending szabállyá alakul (akkor is, ha az app fut). Ami létezik → marad (SpaceRail újraindítása nem veszít semmit, amíg az appok futnak).
 
 ---
 
@@ -219,7 +223,7 @@ Shortcuts
   Workspace 1    Switch: [⌃⌥⌘1]    Assign/unassign: [⌃⌥⌘⇧1]
   ...
   Workspace 9    Switch: [⌃⌥⌘9]    Assign/unassign: [⌃⌥⌘⇧9]
-  Show HUD       [⌃⌥⌘0]
+  Show HUD       [⌃⌥⌘H]
 General
   [ ] Launch at login                 — SMAppService.mainApp.register() / unregister()
 ```
@@ -285,7 +289,6 @@ A 0. lépés két kérdése. Egyiket sem lehet doksiból eldönteni, csak a gép
 Nem v1, de a modell úgy készül, hogy ezek ráépülhessenek.
 
 - **Hibavisszajelzés társításnál**: ha a fókuszált ablak nem társítható (sheet, dialógus, nem mozgatható), most csak `beep` — egy rövid üzenet a HUD-on megmondaná, *miért*.
-- **Swift Testing target** a `WorkspaceState`-re: tiszta value type, a MRU-mozgatás, `remove`/`update`, pending-szabály AX nélkül tesztelhető.
 - **AXObserver appokként** `kAXFocusedWindowChangedNotification`-re (D11): cmd+` ugyanazon app másik workspace-ablakára → auto-váltás; MRU pontosabb. Cosmos `AXApplicationObserverRegistry.swift` másolható (~80 sor + lifecycle).
 - **Settings bővítés:** workspace-ek átnevezése (a HUD-on név a szám mellett), HUD auto-hide időzítő, workspace-szám korlátozása.
 - **"x" a HUD ikonján** leválasztáshoz — ehhez `ignoresMouseEvents = false` kell a HUD-on, és a HUD-nak interaktívvá kell válnia. A toggle-alapú megjelenés (D12) ezt már **nem** zárja ki, ez a hold elvetésének mellékhaszna.

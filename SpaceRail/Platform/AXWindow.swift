@@ -87,10 +87,6 @@ struct AXWindow {
         return CGRect(origin: origin, size: size)
     }
 
-    var title: String? {
-        Self.copyAttribute(kAXTitleAttribute, from: element) as? String
-    }
-
     var isFullScreen: Bool {
         Self.copyAttribute("AXFullScreen", from: element) as? Bool ?? false
     }

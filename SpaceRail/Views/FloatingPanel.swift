@@ -11,6 +11,8 @@ final class FloatingPanel: NSPanel {
     private let hostingView: NSHostingView<AnyView>
     private let placement: Placement
     private weak var targetScreen: NSScreen?
+    // A fade-out only orders the panel out if nothing showed it again in the meantime.
+    private var showGeneration = 0
 
     init(placement: Placement = .center, view: () -> some View) {
         self.placement = placement
@@ -46,7 +48,13 @@ final class FloatingPanel: NSPanel {
     // `screen` is where the user is working; it stays the anchor while the content resizes.
     func showPanel(on screen: NSScreen? = nil) {
         if let screen { targetScreen = screen }
-        alphaValue = 1
+        showGeneration += 1
+        // A zero-length animation replaces a fade-out still in flight; setting alphaValue directly
+        // would let the fade run on to 0 and leave an invisible panel on screen.
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0
+            animator().alphaValue = 1
+        }
         if !isVisible { orderFrontRegardless() }
         hostingView.layoutSubtreeIfNeeded()
         recenter()
@@ -71,13 +79,14 @@ final class FloatingPanel: NSPanel {
             orderOut(nil)
             return
         }
+        let generation = showGeneration
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.12
             context.timingFunction = CAMediaTimingFunction(controlPoints: 0.23, 1, 0.32, 1)
             animator().alphaValue = 0
         }, completionHandler: { [weak self] in
             MainActor.assumeIsolated {
-                guard let self, self.alphaValue == 0 else { return }
+                guard let self, self.showGeneration == generation else { return }
                 self.orderOut(nil)
             }
         })
