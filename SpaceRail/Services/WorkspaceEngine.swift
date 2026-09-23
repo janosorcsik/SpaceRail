@@ -135,9 +135,11 @@ final class WorkspaceEngine {
             }
             if !app.isActive { Log.engine.warning("\(app.bundleIdentifier ?? "?", privacy: .public) did not activate in time") }
         }
+        let screens = Screens.visibleFrames()
         for entry in entries.reversed() {
-            if !entry.window.isFullScreen, let current = entry.window.frame, !current.isClose(to: entry.slot.frame) {
-                entry.window.setFrame(entry.slot.frame)
+            let target = Screens.placeOnScreen(entry.slot.frame, screens: screens)
+            if !entry.window.isFullScreen, let current = entry.window.frame, !current.isClose(to: target) {
+                entry.window.setFrame(target)
             }
             entry.window.raise()
         }
@@ -268,13 +270,15 @@ final class WorkspaceEngine {
         guard var pending = state.pendingApps[bundleID] else { return 0 }
         var placed: [Int: [(slot: WindowSlot, window: AXWindow)]] = [:]
         var order: [Int] = []
+        let screens = Screens.visibleFrames()
         for window in windows {
             guard !pending.slots.isEmpty else { break }
             let saved = pending.slots.removeFirst()
             guard state.workspace(saved.workspaceID) != nil else { continue }
-            if !window.isFullScreen { window.setFrame(saved.frame) }
+            let frame = Screens.placeOnScreen(saved.frame, screens: screens)
+            if !window.isFullScreen { window.setFrame(frame) }
             if placed[saved.workspaceID] == nil { order.append(saved.workspaceID) }
-            placed[saved.workspaceID, default: []].append((WindowSlot(windowID: window.id, bundleID: bundleID, frame: saved.frame), window))
+            placed[saved.workspaceID, default: []].append((WindowSlot(windowID: window.id, bundleID: bundleID, frame: frame), window))
         }
         state.pendingApps[bundleID] = pending.slots.isEmpty ? nil : pending
         for workspaceID in order {

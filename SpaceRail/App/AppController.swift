@@ -90,7 +90,7 @@ final class AppController {
             toastPanel = FloatingPanel(placement: .bottom) { [toastModel] in ToastView(model: toastModel) }
         }
         toastModel.feedback = feedback
-        toastPanel?.showPanel()
+        toastPanel?.showPanel(on: Screens.active())
 
         toastTask?.cancel()
         if isWelcoming, case .hint = feedback { return }
@@ -126,7 +126,7 @@ final class AppController {
         engine.pruneDeadWindows()
         if engine.isRunning { engine.snapshotSelectedWorkspace() }
         AppIconService.shared.prefetch(engine.state.workspaces.flatMap(\.bundleIDs))
-        panel?.showPanel()
+        panel?.showPanel(on: Screens.active())
         scheduleHUDHide(after: duration)
     }
 

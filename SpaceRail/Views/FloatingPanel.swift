@@ -10,6 +10,7 @@ final class FloatingPanel: NSPanel {
 
     private let hostingView: NSHostingView<AnyView>
     private let placement: Placement
+    private weak var targetScreen: NSScreen?
 
     init(placement: Placement = .center, view: () -> some View) {
         self.placement = placement
@@ -42,7 +43,9 @@ final class FloatingPanel: NSPanel {
     }
 
     // Opened by a hotkey many times a day: no entrance animation, it would only read as latency.
-    func showPanel() {
+    // `screen` is where the user is working; it stays the anchor while the content resizes.
+    func showPanel(on screen: NSScreen? = nil) {
+        if let screen { targetScreen = screen }
         alphaValue = 1
         if !isVisible { orderFrontRegardless() }
         hostingView.layoutSubtreeIfNeeded()
@@ -50,7 +53,7 @@ final class FloatingPanel: NSPanel {
     }
 
     @objc private func recenter() {
-        guard let screen = NSScreen.main?.visibleFrame else { return }
+        guard let screen = (targetScreen ?? NSScreen.main)?.visibleFrame else { return }
         let size = frame.size
         let y: CGFloat = switch placement {
         case .center: screen.midY - size.height / 2 + screen.height * 0.08
