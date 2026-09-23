@@ -43,16 +43,14 @@ struct AXWindow {
         return AXWindow(element: element, id: id, pid: pid)
     }
 
-    // Resolves many IDs at once: one window-server query, then one AX enumeration per owning app.
-    // Missing IDs are closed windows. Order of the result follows `ids`.
-    static func find(ids: [CGWindowID]) -> [CGWindowID: AXWindow] {
-        let owners = ownerPIDs()
+    // Resolves many IDs at once: one AX enumeration per owning app. Missing IDs are closed windows.
+    static func find(ids: [CGWindowID], in list: WindowList = .current()) -> [CGWindowID: AXWindow] {
         var byPID: [pid_t: Set<CGWindowID>] = [:]
         for id in ids {
-            if let pid = owners[id] {
+            if let pid = list.owners[id] {
                 byPID[pid, default: []].insert(id)
             } else {
-                Log.ax.debug("find: window \(id) has no owner in CGWindowList (\(owners.count) windows listed)")
+                Log.ax.debug("find: window \(id) has no owner in CGWindowList (\(list.owners.count) windows listed)")
             }
         }
         var result: [CGWindowID: AXWindow] = [:]
@@ -68,24 +66,6 @@ struct AXWindow {
             }
         }
         return result
-    }
-
-    static func liveWindowIDs() -> Set<CGWindowID> {
-        Set(ownerPIDs().keys)
-    }
-
-    // CGWindowListCreateDescriptionFromArray wants raw-pointer CFNumbers and silently returns nothing
-    // otherwise, so we take the whole list and index it ourselves.
-    private static func ownerPIDs() -> [CGWindowID: pid_t] {
-        guard let info = CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]] else { return [:] }
-        var owners: [CGWindowID: pid_t] = [:]
-        for entry in info {
-            guard let id = entry[kCGWindowNumber as String] as? CGWindowID,
-                  let pid = entry[kCGWindowOwnerPID as String] as? pid_t
-            else { continue }
-            owners[id] = pid
-        }
-        return owners
     }
 
     // MARK: - Attributes
@@ -201,4 +181,44 @@ struct AXWindow {
         var settable = DarwinBoolean(false)
         return AXUIElementIsAttributeSettable(element, name as CFString, &settable) == .success && settable.boolValue
     }
+}
+
+// One window-server snapshot: which process owns which window right now. Take one per operation
+// and pass it along; the query lists every window on the system.
+nonisolated struct WindowList: Sendable {
+    let owners: [CGWindowID: pid_t]
+    private let bundleIDs: [pid_t: String]
+
+    init(owners: [CGWindowID: pid_t], bundleIDs: [pid_t: String]) {
+        self.owners = owners
+        self.bundleIDs = bundleIDs
+    }
+
+    // CGWindowListCreateDescriptionFromArray wants raw-pointer CFNumbers and silently returns nothing
+    // otherwise, so we take the whole list and index it ourselves.
+    static func current() -> WindowList {
+        var owners: [CGWindowID: pid_t] = [:]
+        if let info = CGWindowListCopyWindowInfo(.optionAll, kCGNullWindowID) as? [[String: Any]] {
+            for entry in info {
+                guard let id = entry[kCGWindowNumber as String] as? CGWindowID,
+                      let pid = entry[kCGWindowOwnerPID as String] as? pid_t
+                else { continue }
+                owners[id] = pid
+            }
+        }
+        var bundleIDs: [pid_t: String] = [:]
+        for app in NSWorkspace.shared.runningApplications {
+            if let bundleID = app.bundleIdentifier { bundleIDs[app.processIdentifier] = bundleID }
+        }
+        return WindowList(owners: owners, bundleIDs: bundleIDs)
+    }
+
+    // Window IDs start over after a restart, so a saved ID can come back as someone else's window.
+    // It's only the same window if the same app still owns it.
+    func contains(_ slot: WindowSlot) -> Bool {
+        guard let pid = owners[slot.windowID] else { return false }
+        return bundleIDs[pid] == slot.bundleID
+    }
+
+    var runningBundleIDs: Set<String> { Set(bundleIDs.values) }
 }

@@ -9,7 +9,7 @@ struct HUDView: View {
             ForEach(engine.state.workspaces) { workspace in
                 WorkspaceCard(
                     workspace: workspace,
-                    pendingBundleIDs: engine.state.pendingApps.filter { $0.value.workspaceID == workspace.id }.keys.sorted(),
+                    pendingBundleIDs: engine.state.pendingBundleIDs(in: workspace.id),
                     isSelected: workspace.id == engine.state.selectedID,
                     shortcut: KeyboardShortcuts.getShortcut(for: .switchTo(workspace.id))?.description,
                     addShortcut: KeyboardShortcuts.getShortcut(for: .toggle(workspace.id))?.description

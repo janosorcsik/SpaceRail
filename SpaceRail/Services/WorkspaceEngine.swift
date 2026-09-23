@@ -56,10 +56,7 @@ final class WorkspaceEngine {
     }
 
     func removeWorkspace(_ id: Int) {
-        guard state.workspaces.count > 1, let index = state.index(of: id) else { return }
-        state.workspaces.remove(at: index)
-        state.pendingApps = state.pendingApps.filter { $0.value.workspaceID != id }
-        if state.selectedID == id { state.selectedID = state.workspaces[0].id }
+        state.removeWorkspace(id)
         save()
     }
 
@@ -73,14 +70,15 @@ final class WorkspaceEngine {
     func switchTo(_ id: Int) {
         guard let target = state.workspace(id) else { return }
         let started = CFAbsoluteTimeGetCurrent()
+        let list = WindowList.current()
 
-        snapshotFrames(of: state.selectedID)
-        pruneDeadWindows()
+        snapshotFrames(of: state.selectedID, in: list)
+        pruneDeadWindows(in: list)
         state.selectedID = id
         save()
 
         let slots = state.workspace(id)?.windows ?? target.windows
-        let found = AXWindow.find(ids: slots.map(\.windowID))
+        let found = AXWindow.find(ids: slots.map(\.windowID), in: list)
         var appOrder: [pid_t] = []
         var windowsByApp: [pid_t: [(slot: WindowSlot, window: AXWindow)]] = [:]
         for slot in slots {
@@ -161,12 +159,10 @@ final class WorkspaceEngine {
         save()
     }
 
-    func pruneDeadWindows() {
-        let live = AXWindow.liveWindowIDs()
-        let before = state.workspaces.reduce(0) { $0 + $1.windows.count }
-        state.removeAll { !live.contains($0.windowID) }
-        let removed = before - state.workspaces.reduce(0) { $0 + $1.windows.count }
-        if removed > 0 {
+    func pruneDeadWindows(in list: WindowList = .current()) {
+        let pendingBefore = state.pendingApps.count
+        let removed = state.retireDeadWindows(in: list, atLaunch: false)
+        if removed > 0 || state.pendingApps.count != pendingBefore {
             Log.engine.info("pruned \(removed) closed windows")
             save()
         }
@@ -210,13 +206,13 @@ final class WorkspaceEngine {
             $0.bundleIdentifier == bundleID && $0.processIdentifier != app.processIdentifier
         }
         guard !otherInstanceRunning else { return }
-        guard let owner = state.workspaces.first(where: { $0.windows.contains { $0.bundleID == bundleID } }) else { return }
+        adoptTasks[bundleID]?.cancel()
+        guard state.workspaces.contains(where: { $0.bundleIDs.contains(bundleID) }) else { return }
 
-        let frames = owner.windows.filter { $0.bundleID == bundleID }.map(\.frame)
-        state.pendingApps[bundleID] = PendingApp(workspaceID: owner.id, frames: frames)
-        state.removeAll { $0.bundleID == bundleID }
+        state.makePending(bundleID)
         save()
-        Log.engine.info("\(bundleID, privacy: .public) quit, will re-adopt into workspace \(owner.id)")
+        let workspaces = state.pendingApps[bundleID]?.workspaceIDs.sorted() ?? []
+        Log.engine.info("\(bundleID, privacy: .public) quit, will re-adopt into workspaces \(workspaces)")
     }
 
     private func application(from notification: Notification) -> NSRunningApplication? {
@@ -225,57 +221,71 @@ final class WorkspaceEngine {
 
     // MARK: - Pending apps (quit / reboot recovery)
 
+    // Apps restore their windows one after another, and slow ones take a few seconds to show any.
+    // Keep collecting until every saved window has a taker or the app has had its chance.
     private func adoptIfPending(_ app: NSRunningApplication) {
-        guard let bundleID = app.bundleIdentifier, let pending = state.pendingApps[bundleID] else { return }
+        guard let bundleID = app.bundleIdentifier, state.pendingApps[bundleID] != nil else { return }
         adoptTasks[bundleID]?.cancel()
         adoptTasks[bundleID] = Task {
-            // Windows usually appear shortly after didLaunch; give slow apps a few seconds.
+            defer { if !Task.isCancelled { adoptTasks[bundleID] = nil } }
+            var adopted = 0
             for _ in 0..<20 {
-                guard !Task.isCancelled, !app.isTerminated else { return }
-                let windows = AXWindow.windows(of: app.processIdentifier).filter(\.isManageable)
-                if !windows.isEmpty {
-                    adopt(windows, bundleID: bundleID, pending: pending)
-                    return
-                }
+                guard !Task.isCancelled, !app.isTerminated, state.pendingApps[bundleID] != nil else { return }
+                let known = Set(state.workspaces.flatMap(\.windows).map(\.windowID))
+                let fresh = AXWindow.windows(of: app.processIdentifier).filter { !known.contains($0.id) && $0.isManageable }
+                if !fresh.isEmpty { adopted += adopt(fresh, bundleID: bundleID) }
                 try? await Task.sleep(for: .milliseconds(500))
             }
-            Log.engine.warning("\(bundleID, privacy: .public) launched but showed no windows, keeping it pending")
+            guard !Task.isCancelled, state.pendingApps[bundleID] != nil else { return }
+            if adopted > 0 {
+                // It came back with fewer windows than it had; the rest aren't coming.
+                state.pendingApps[bundleID] = nil
+                save()
+            } else {
+                Log.engine.warning("\(bundleID, privacy: .public) launched but showed no windows, keeping it pending")
+            }
         }
     }
 
-    private func adopt(_ windows: [AXWindow], bundleID: String, pending: PendingApp) {
-        state.pendingApps[bundleID] = nil
-        state.removeAll { $0.bundleID == bundleID }
-        guard state.workspace(pending.workspaceID) != nil else {
-            save()
-            return
+    // Each new window takes the next saved slot: its workspace and its frame. Windows beyond the
+    // saved ones stay free; the app had fewer windows in workspaces than it restores now.
+    @discardableResult
+    private func adopt(_ windows: [AXWindow], bundleID: String) -> Int {
+        guard var pending = state.pendingApps[bundleID] else { return 0 }
+        var placed: [Int: [(slot: WindowSlot, window: AXWindow)]] = [:]
+        var order: [Int] = []
+        for window in windows {
+            guard !pending.slots.isEmpty else { break }
+            let saved = pending.slots.removeFirst()
+            guard state.workspace(saved.workspaceID) != nil else { continue }
+            if !window.isFullScreen { window.setFrame(saved.frame) }
+            if placed[saved.workspaceID] == nil { order.append(saved.workspaceID) }
+            placed[saved.workspaceID, default: []].append((WindowSlot(windowID: window.id, bundleID: bundleID, frame: saved.frame), window))
         }
-
-        var slots: [WindowSlot] = []
-        for (index, window) in windows.enumerated() {
-            let saved = index < pending.frames.count ? pending.frames[index] : nil
-            if let saved, !window.isFullScreen { window.setFrame(saved) }
-            guard let frame = saved ?? window.frame else { continue }
-            slots.append(WindowSlot(windowID: window.id, bundleID: bundleID, frame: frame))
+        state.pendingApps[bundleID] = pending.slots.isEmpty ? nil : pending
+        for workspaceID in order {
+            let entries = placed[workspaceID] ?? []
+            state.update(workspaceID) { $0.windows.insert(contentsOf: entries.map(\.slot), at: 0) }
         }
-        state.update(pending.workspaceID) { $0.windows.insert(contentsOf: slots, at: 0) }
         AppIconService.shared.prefetch([bundleID])
         save()
-        Log.engine.info("adopted \(slots.count) \(bundleID, privacy: .public) windows into workspace \(pending.workspaceID)")
-        if let target = state.workspace(pending.workspaceID) {
+
+        let slots = order.flatMap { placed[$0] ?? [] }.map(\.slot)
+        guard !slots.isEmpty else { return 0 }
+        Log.engine.info("adopted \(slots.count) \(bundleID, privacy: .public) windows into workspaces \(order)")
+        if let first = order.first, let target = state.workspace(first) {
             onFeedback?(.returned(app: AppIconService.shared.name(for: bundleID), workspace: target.name))
         }
         enforceFrames(of: slots)
 
-        if pending.workspaceID == state.selectedID, let pid = windows.first?.pid {
-            let byID = Dictionary(uniqueKeysWithValues: windows.map { ($0.id, $0) })
-            let entries = slots.compactMap { slot in byID[slot.windowID].map { (slot: slot, window: $0) } }
+        if let entries = placed[state.selectedID], let pid = entries.first?.window.pid {
             Task {
                 suppressActivationUntil = .distantFuture
                 defer { suppressActivationUntil = Date().addingTimeInterval(0.3) }
                 await bringForward(entries, pid: pid)
             }
         }
+        return slots.count
     }
 
     // Apps restore their own window geometry shortly after launch, often after we've already placed
@@ -298,11 +308,20 @@ final class WorkspaceEngine {
         }
     }
 
-    // A workspace is a layout; switching to it brings back the apps that belong there.
+    // A workspace is a layout; switching to it brings back the apps that belong there. One that is
+    // already running (it came back without windows earlier) gets another chance to be adopted.
     private func launchPendingApps(for workspaceID: Int) {
-        for (bundleID, pending) in state.pendingApps where pending.workspaceID == workspaceID {
-            let running = NSWorkspace.shared.runningApplications.contains { $0.bundleIdentifier == bundleID }
-            guard !running, let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { continue }
+        for bundleID in state.pendingBundleIDs(in: workspaceID) {
+            if let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == bundleID }) {
+                if adoptTasks[bundleID] == nil || adoptTasks[bundleID]?.isCancelled == true { adoptIfPending(app) }
+                continue
+            }
+            guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
+                Log.engine.notice("\(bundleID, privacy: .public) is no longer installed, forgetting it")
+                state.pendingApps[bundleID] = nil
+                save()
+                continue
+            }
             Log.engine.info("launching \(bundleID, privacy: .public) for workspace \(workspaceID)")
             onFeedback?(.launching(app: AppIconService.shared.name(for: bundleID)))
             let configuration = NSWorkspace.OpenConfiguration()
@@ -323,19 +342,12 @@ final class WorkspaceEngine {
         }
     }
 
-    // Windows don't survive their app: drop what's gone, and remember the app for when it returns.
+    // Drop what's gone and remember the apps for when they return. At launch an app that is running
+    // but has none of its saved windows was restarted while we weren't looking (typically a reboot
+    // with the app opening at login before us): it's re-adopted right away.
     private func reconcile() {
-        let live = AXWindow.liveWindowIDs()
-        let running = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
-
-        for workspace in state.workspaces {
-            for slot in workspace.windows where !live.contains(slot.windowID) {
-                guard !running.contains(slot.bundleID), state.pendingApps[slot.bundleID] == nil else { continue }
-                let frames = workspace.windows.filter { $0.bundleID == slot.bundleID }.map(\.frame)
-                state.pendingApps[slot.bundleID] = PendingApp(workspaceID: workspace.id, frames: frames)
-            }
-        }
-        state.removeAll { !live.contains($0.windowID) }
+        let list = WindowList.current()
+        state.retireDeadWindows(in: list, atLaunch: true)
         if state.selected == nil, let first = state.workspaces.first { state.selectedID = first.id }
         save()
         AppIconService.shared.prefetch(state.workspaces.flatMap(\.bundleIDs) + Array(state.pendingApps.keys))
@@ -343,9 +355,9 @@ final class WorkspaceEngine {
 
     // MARK: - Helpers
 
-    private func snapshotFrames(of id: Int) {
+    private func snapshotFrames(of id: Int, in list: WindowList = .current()) {
         guard let workspace = state.workspace(id) else { return }
-        let found = AXWindow.find(ids: workspace.windows.map(\.windowID))
+        let found = AXWindow.find(ids: workspace.windows.map(\.windowID), in: list)
         state.update(id) { workspace in
             for index in workspace.windows.indices {
                 guard let window = found[workspace.windows[index].windowID],

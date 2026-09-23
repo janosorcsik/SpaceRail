@@ -80,7 +80,7 @@ private struct WorkspacesSettingsView: View {
     // Only ask when there is something to lose: an empty workspace just goes.
     private func requestRemoval(of id: Workspace.ID) {
         guard let workspace = engine.state.workspace(id) else { return }
-        let hasPending = engine.state.pendingApps.values.contains { $0.workspaceID == id }
+        let hasPending = !engine.state.pendingBundleIDs(in: id).isEmpty
         if workspace.windows.isEmpty && !hasPending {
             remove(workspace)
         } else {
