@@ -228,7 +228,7 @@ final class WorkspaceEngine {
         state.makePending(bundleID)
         save()
         let workspaces = state.pendingApps[bundleID]?.workspaceIDs.sorted() ?? []
-        Log.engine.info("\(bundleID, privacy: .public) quit, will re-adopt into workspaces \(workspaces)")
+        Log.engine.info("\(bundleID, privacy: .public) quit, will re-adopt into workspaces \(workspaces, privacy: .public)")
     }
 
     private func application(from notification: Notification) -> NSRunningApplication? {
@@ -290,7 +290,7 @@ final class WorkspaceEngine {
 
         let slots = order.flatMap { placed[$0] ?? [] }.map(\.slot)
         guard !slots.isEmpty else { return 0 }
-        Log.engine.info("adopted \(slots.count) \(bundleID, privacy: .public) windows into workspaces \(order)")
+        Log.engine.info("adopted \(slots.count) \(bundleID, privacy: .public) windows into workspaces \(order, privacy: .public)")
         if let first = order.first, let target = state.workspace(first) {
             onFeedback?(.returned(app: AppIconService.shared.name(for: bundleID), workspace: target.name))
         }
