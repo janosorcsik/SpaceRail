@@ -10,8 +10,12 @@ final class WorkspaceEngine {
     @ObservationIgnored var onFeedback: ((Feedback) -> Void)?
 
     private let store: StateStore
-    // Our own activate() calls fire didActivateApplication too; ignore those.
+    // Our own activate() calls fire didActivateApplication too; ignore those. Several tasks can be
+    // activating at once (a switch cancelled by the next, an adoption), so they're counted: the last
+    // one to finish opens a short grace period for notifications still in flight.
+    private var ownActivations = 0
     private var suppressActivationUntil = Date.distantPast
+    private var isSuppressingActivation: Bool { ownActivations > 0 || Date() < suppressActivationUntil }
     private var switchTask: Task<Void, Never>?
     private var adoptTasks: [String: Task<Void, Never>] = [:]
     private var saveTask: Task<Void, Never>?
@@ -96,8 +100,8 @@ final class WorkspaceEngine {
 
         switchTask?.cancel()
         switchTask = Task {
-            suppressActivationUntil = .distantFuture
-            defer { suppressActivationUntil = Date().addingTimeInterval(0.3) }
+            beginOwnActivations()
+            defer { endOwnActivations() }
 
             // Least recently used app first, so the most recent one ends up active with its most
             // recent window on top.
@@ -109,6 +113,15 @@ final class WorkspaceEngine {
             let elapsed = (CFAbsoluteTimeGetCurrent() - started) * 1000
             Log.engine.info("switched to \(id): \(slots.count) windows in \(appOrder.count) apps, \(elapsed, format: .fixed(precision: 1)) ms")
         }
+    }
+
+    private func beginOwnActivations() {
+        ownActivations += 1
+    }
+
+    private func endOwnActivations() {
+        ownActivations -= 1
+        if ownActivations == 0 { suppressActivationUntil = Date().addingTimeInterval(0.3) }
     }
 
     // kAXRaiseAction only reorders within the owning app until that app is active; once it is, a
@@ -177,7 +190,7 @@ final class WorkspaceEngine {
     }
 
     @objc private func appDidActivate(_ notification: Notification) {
-        guard Date() >= suppressActivationUntil, let app = application(from: notification) else { return }
+        guard !isSuppressingActivation, let app = application(from: notification) else { return }
         // The previously active app just lost focus; its windows won't move until it's active again.
         snapshotSelectedWorkspace()
         guard let window = AXWindow.focusedWindow(of: app.processIdentifier),
@@ -281,8 +294,8 @@ final class WorkspaceEngine {
 
         if let entries = placed[state.selectedID], let pid = entries.first?.window.pid {
             Task {
-                suppressActivationUntil = .distantFuture
-                defer { suppressActivationUntil = Date().addingTimeInterval(0.3) }
+                beginOwnActivations()
+                defer { endOwnActivations() }
                 await bringForward(entries, pid: pid)
             }
         }

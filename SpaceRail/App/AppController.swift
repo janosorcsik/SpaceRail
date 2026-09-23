@@ -34,8 +34,8 @@ final class AppController {
             Self.hudFlashOnSwitchKey: true,
         ])
 
-        for (position, workspace) in engine.state.workspaces.enumerated() {
-            KeyboardShortcuts.installDefaultsIfNeeded(for: workspace, position: position)
+        for workspace in engine.state.workspaces {
+            KeyboardShortcuts.installDefaultsIfNeeded(for: workspace, among: engine.state.workspaces)
             registerShortcuts(for: workspace.id)
         }
         KeyboardShortcuts.onKeyDown(for: .showHUD) { [weak self] in
@@ -56,7 +56,7 @@ final class AppController {
     @discardableResult
     func addWorkspace() -> Workspace {
         let workspace = engine.addWorkspace()
-        KeyboardShortcuts.installDefaultsIfNeeded(for: workspace, position: engine.state.workspaces.count - 1)
+        KeyboardShortcuts.installDefaultsIfNeeded(for: workspace, among: engine.state.workspaces)
         registerShortcuts(for: workspace.id)
         return workspace
     }

@@ -19,16 +19,24 @@ extension KeyboardShortcuts.Name {
 extension KeyboardShortcuts {
     private static let digits: [Key] = [.one, .two, .three, .four, .five, .six, .seven, .eight, .nine]
 
-    // ⌃⌥⌘<n> / ⌃⌥⌘⇧<n> by position, if the position has a digit. Runs once per workspace per
-    // defaults domain (a marker in UserDefaults), so a shortcut the user cleared on purpose stays
-    // cleared, while a fresh install or a bundle-ID change still gets the defaults.
-    static func installDefaultsIfNeeded(for workspace: Workspace, position: Int) {
+    // ⌃⌥⌘<n> / ⌃⌥⌘⇧<n>: the digit of the workspace's position, or, when another workspace already
+    // uses that one (after a removal the positions shift), the first digit nobody uses. Runs once
+    // per workspace per defaults domain (a marker in UserDefaults), so a shortcut the user cleared on
+    // purpose stays cleared, while a fresh install or a bundle-ID change still gets the defaults.
+    static func installDefaultsIfNeeded(for workspace: Workspace, among workspaces: [Workspace]) {
         let marker = seededKey(workspace.id)
         guard !UserDefaults.standard.bool(forKey: marker) else { return }
         UserDefaults.standard.set(true, forKey: marker)
-        guard position < digits.count else { return }
 
-        let key = digits[position]
+        let others = workspaces.map(\.id).filter { $0 != workspace.id }
+        let taken = Set(others.flatMap { [getShortcut(for: .switchTo($0)), getShortcut(for: .toggle($0))] }.compactMap(\.self))
+        let position = workspaces.firstIndex { $0.id == workspace.id } ?? workspaces.count
+        let candidates = (position < digits.count ? [digits[position]] : []) + digits
+        let isFree = { (key: Key) in
+            !taken.contains(.init(key, modifiers: Name.hyper)) && !taken.contains(.init(key, modifiers: Name.hyper.union(.shift)))
+        }
+        guard let key = candidates.first(where: isFree) else { return }
+
         if getShortcut(for: .switchTo(workspace.id)) == nil {
             setShortcut(.init(key, modifiers: Name.hyper), for: .switchTo(workspace.id))
         }
