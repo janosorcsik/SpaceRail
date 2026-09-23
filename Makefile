@@ -21,7 +21,7 @@ RESOLVED_IN_PROJ := $(XCODEPROJ)/project.xcworkspace/xcshareddata/swiftpm/Packag
 XCODEBUILD := xcodebuild -project "$(XCODEPROJ)" -scheme "$(SCHEME)" -derivedDataPath "$(BUILD_DIR)" -quiet
 
 .DEFAULT_GOAL := help
-.PHONY: help generate build run install uninstall logs reset-permissions clean distclean
+.PHONY: help generate build test run install uninstall logs reset-permissions clean distclean
 
 help: ## Show this help
 	@echo "$(PROJECT) $(VERSION)"
@@ -39,6 +39,9 @@ build: generate ## Build the dev app (Debug, "SpaceRail Dev", separate bundle ID
 	$(XCODEBUILD) -configuration Debug -destination 'platform=macOS,arch=arm64' build
 	@cp "$(RESOLVED_IN_PROJ)" Package.resolved 2>/dev/null || true
 	@echo "==> $(DEV_APP)"
+
+test: generate ## Run the unit tests (model and geometry; never launches the app)
+	$(XCODEBUILD) -configuration Debug -destination 'platform=macOS,arch=arm64' test
 
 run: build ## Build and (re)launch the dev app
 	@pkill -x "$(PROJECT) Dev" 2>/dev/null || true

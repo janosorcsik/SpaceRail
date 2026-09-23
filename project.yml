@@ -44,5 +44,26 @@ targets:
           PRODUCT_NAME: SpaceRail Dev
           PRODUCT_BUNDLE_IDENTIFIER: com.janosorcsik.SpaceRail.debug
     scheme:
-      testTargets: []
+      testTargets: [SpaceRailTests]
       gatherCoverageData: false
+
+  # No host app: running the tests must not launch SpaceRail (it would ask for Accessibility and
+  # start moving windows). The model and geometry sources are compiled straight into the bundle.
+  SpaceRailTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: SpaceRailTests
+      - path: SpaceRail/Models/WorkspaceState.swift
+      - path: SpaceRail/Models/Shortcuts.swift
+      - path: SpaceRail/Services/StateStore.swift
+      - path: SpaceRail/Models/AppProfile.swift
+      - path: SpaceRail/Platform/AXWindow.swift
+      - path: SpaceRail/Platform/Screens.swift
+      - path: SpaceRail/Platform/Log.swift
+    dependencies:
+      - package: KeyboardShortcuts
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.janosorcsik.SpaceRailTests
+        GENERATE_INFOPLIST_FILE: YES

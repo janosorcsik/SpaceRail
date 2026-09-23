@@ -31,17 +31,20 @@ extension KeyboardShortcuts {
         let others = workspaces.map(\.id).filter { $0 != workspace.id }
         let taken = Set(others.flatMap { [getShortcut(for: .switchTo($0)), getShortcut(for: .toggle($0))] }.compactMap(\.self))
         let position = workspaces.firstIndex { $0.id == workspace.id } ?? workspaces.count
-        let candidates = (position < digits.count ? [digits[position]] : []) + digits
-        let isFree = { (key: Key) in
-            !taken.contains(.init(key, modifiers: Name.hyper)) && !taken.contains(.init(key, modifiers: Name.hyper.union(.shift)))
-        }
-        guard let key = candidates.first(where: isFree) else { return }
+        guard let key = defaultKey(position: position, taken: taken) else { return }
 
         if getShortcut(for: .switchTo(workspace.id)) == nil {
             setShortcut(.init(key, modifiers: Name.hyper), for: .switchTo(workspace.id))
         }
         if getShortcut(for: .toggle(workspace.id)) == nil {
             setShortcut(.init(key, modifiers: Name.hyper.union(.shift)), for: .toggle(workspace.id))
+        }
+    }
+
+    static func defaultKey(position: Int, taken: Set<Shortcut>) -> Key? {
+        let candidates = (position < digits.count ? [digits[position]] : []) + digits
+        return candidates.first { key in
+            !taken.contains(.init(key, modifiers: Name.hyper)) && !taken.contains(.init(key, modifiers: Name.hyper.union(.shift)))
         }
     }
 

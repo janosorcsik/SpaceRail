@@ -36,6 +36,7 @@ The Xcode project is generated with [XcodeGen](https://github.com/yonaskolb/Xcod
 ```sh
 brew install xcodegen
 make run        # build the dev app ("SpaceRail Dev", own bundle ID) and launch it
+make test       # unit tests (model and geometry; never launches the app)
 make install    # archive Release and install to /Applications
 make logs       # stream the app's logs
 make help       # everything else
