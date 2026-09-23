@@ -12,6 +12,16 @@ struct AXWindow {
     let id: CGWindowID
     let pid: pid_t
 
+    // Every AX call is a synchronous round trip to the target app, on the main thread. The default
+    // timeout is about 6 s, so one hung app would freeze the hotkeys for that long, per call. A
+    // responsive app answers in a few milliseconds; a quarter second is generous.
+    static let messagingTimeout: Float = 0.25
+
+    static func configureMessagingTimeout() {
+        let error = AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), messagingTimeout)
+        if error != .success { Log.ax.error("setting the messaging timeout failed: \(error.rawValue)") }
+    }
+
     // MARK: - Lookup
 
     static func windows(of pid: pid_t) -> [AXWindow] {

@@ -24,6 +24,7 @@ final class WorkspaceEngine {
     func start() {
         guard !isRunning else { return }
         isRunning = true
+        AXWindow.configureMessagingTimeout()
         reconcile()
         adoptPendingRunningApps()
 
