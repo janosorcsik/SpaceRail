@@ -8,7 +8,9 @@ final class AppController {
     static let hudAutoHideKey = "hudAutoHideSeconds"
     static let hudAutoHideDefault: Double = 2
     static let hudFlashOnSwitchKey = "hudFlashOnSwitch"
-    private static let welcomedKey = "didShowWelcome"
+    // Set when the lesson has been *acted on* (first attach or HUD toggle), not when it was shown:
+    // quitting halfway through means it plays again.
+    private static let welcomeCompletedKey = "didCompleteWelcome"
     // Long enough to read the highlighted card, short enough not to feel like a window.
     private static let flashDuration: Duration = .seconds(1)
 
@@ -22,6 +24,9 @@ final class AppController {
     @ObservationIgnored private var toastTask: Task<Void, Never>?
     @ObservationIgnored private var permissionTask: Task<Void, Never>?
     @ObservationIgnored private var registeredWorkspaceIDs: Set<Int> = []
+    // First run: the HUD and the hint stay up until the user has done one thing with them.
+    @ObservationIgnored private var isWelcoming = false
+    @ObservationIgnored private var welcomeHint: Feedback?
 
     init() {
         UserDefaults.standard.register(defaults: [
@@ -64,6 +69,7 @@ final class AppController {
     // MARK: - Feedback
 
     private func handle(_ feedback: Feedback) {
+        if isWelcoming, case .added = feedback { endWelcome() }
         switch feedback {
         case .switched:
             // The HUD itself is the confirmation: the target card lights up.
@@ -87,16 +93,24 @@ final class AppController {
         toastPanel?.showPanel()
 
         toastTask?.cancel()
+        if isWelcoming, case .hint = feedback { return }
         toastTask = Task { [weak self] in
             try? await Task.sleep(for: feedback.duration)
-            guard !Task.isCancelled else { return }
-            self?.toastPanel?.hidePanel()
+            guard !Task.isCancelled, let self else { return }
+            // A refusal during the lesson steps aside for the hint again instead of leaving the
+            // HUD up with nothing explaining it.
+            if isWelcoming, let welcomeHint {
+                showToast(welcomeHint)
+            } else {
+                toastPanel?.hidePanel()
+            }
         }
     }
 
     // MARK: - HUD
 
     func toggleHUD() {
+        if isWelcoming { endWelcome() }
         if panel?.isVisible == true {
             hideHUD()
         } else {
@@ -125,6 +139,7 @@ final class AppController {
     // Every user action restarts the countdown; a setting of 0 means it stays until toggled.
     // A countdown never shortens one already running, so a welcome or flash isn't cut off.
     private func scheduleHUDHide(after duration: Duration? = nil) {
+        guard !isWelcoming else { return }
         let seconds = UserDefaults.standard.double(forKey: Self.hudAutoHideKey)
         let delay = duration ?? (seconds > 0 ? .seconds(seconds) : nil)
         guard let delay else {
@@ -170,21 +185,37 @@ final class AppController {
         }
     }
 
-    // Once: show where things are and the one gesture that matters. Goes up before the engine
-    // starts talking, and a hint isn't replaced by the confirmations that follow.
+    // Show where things are and the one gesture that matters, and leave both up until the user has
+    // made that gesture: this is the lesson. Someone who already has windows attached knows it.
     private func start() {
-        welcomeIfFirstRun()
+        if !UserDefaults.standard.bool(forKey: Self.welcomeCompletedKey) {
+            let hasAttachments = engine.state.workspaces.contains { !$0.windows.isEmpty } || !engine.state.pendingApps.isEmpty
+            if hasAttachments {
+                UserDefaults.standard.set(true, forKey: Self.welcomeCompletedKey)
+            } else {
+                welcome()
+            }
+        }
         engine.start()
     }
 
-    private func welcomeIfFirstRun() {
-        guard !UserDefaults.standard.bool(forKey: Self.welcomedKey) else { return }
-        UserDefaults.standard.set(true, forKey: Self.welcomedKey)
+    private func welcome() {
         guard let first = engine.state.workspaces.first else { return }
-
-        showHUD(for: .seconds(8))
+        isWelcoming = true
+        showHUD()
         let shortcut = KeyboardShortcuts.getShortcut(for: .toggle(first.id))?.description ?? "the Add / remove shortcut"
-        showToast(.hint("Press \(shortcut) in any window to add it to workspace “\(first.name)”. Shortcuts and names are in Settings."))
+        let hint = Feedback.hint("Press \(shortcut) in any window to add it to workspace “\(first.name)”. Shortcuts and names are in Settings.")
+        welcomeHint = hint
+        showToast(hint)
+    }
+
+    private func endWelcome() {
+        isWelcoming = false
+        welcomeHint = nil
+        UserDefaults.standard.set(true, forKey: Self.welcomeCompletedKey)
+        toastTask?.cancel()
+        toastPanel?.hidePanel()
+        scheduleHUDHide()
     }
 
     // MARK: - Shortcuts
