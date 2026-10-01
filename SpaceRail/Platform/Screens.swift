@@ -40,8 +40,10 @@ enum Screens {
     static func active() -> NSScreen? {
         if let app = NSWorkspace.shared.frontmostApplication,
            let frame = AXWindow.focusedWindow(of: app.processIdentifier)?.frame {
-            let best = NSScreen.screens.max { area(toAX($0.frame).intersection(frame)) < area(toAX($1.frame).intersection(frame)) }
-            if let best, area(toAX(best.frame).intersection(frame)) > 0 { return best }
+            let best = NSScreen.screens
+                .map { ($0, area(toAX($0.frame).intersection(frame))) }
+                .max { $0.1 < $1.1 }
+            if let best, best.1 > 0 { return best.0 }
         }
         let mouse = NSEvent.mouseLocation
         return NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
