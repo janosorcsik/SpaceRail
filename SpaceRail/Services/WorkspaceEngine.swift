@@ -268,8 +268,7 @@ final class WorkspaceEngine {
     @discardableResult
     private func adopt(_ windows: [AXWindow], bundleID: String) -> Int {
         guard var pending = state.pendingApps[bundleID] else { return 0 }
-        var placed: [Int: [(slot: WindowSlot, window: AXWindow)]] = [:]
-        var order: [Int] = []
+        var adopted: [(workspaceID: Int, slot: WindowSlot, window: AXWindow)] = []
         let screens = Screens.visibleFrames()
         for window in windows {
             guard !pending.slots.isEmpty else { break }
@@ -277,30 +276,29 @@ final class WorkspaceEngine {
             guard state.workspace(saved.workspaceID) != nil else { continue }
             let frame = Screens.placeOnScreen(saved.frame, screens: screens)
             if !window.isFullScreen { window.setFrame(frame) }
-            if placed[saved.workspaceID] == nil { order.append(saved.workspaceID) }
-            placed[saved.workspaceID, default: []].append((WindowSlot(windowID: window.id, bundleID: bundleID, frame: frame), window))
+            adopted.append((saved.workspaceID, WindowSlot(windowID: window.id, bundleID: bundleID, frame: frame), window))
         }
         state.pendingApps[bundleID] = pending.slots.isEmpty ? nil : pending
-        for workspaceID in order {
-            let entries = placed[workspaceID] ?? []
+        for (workspaceID, entries) in Dictionary(grouping: adopted, by: \.workspaceID) {
             state.update(workspaceID) { $0.windows.insert(contentsOf: entries.map(\.slot), at: 0) }
         }
         AppIconService.shared.prefetch([bundleID])
         save()
 
-        let slots = order.flatMap { placed[$0] ?? [] }.map(\.slot)
-        guard !slots.isEmpty else { return 0 }
-        Log.engine.info("adopted \(slots.count) \(bundleID, privacy: .public) windows into workspaces \(order, privacy: .public)")
-        if let first = order.first, let target = state.workspace(first) {
+        guard let first = adopted.first else { return 0 }
+        let slots = adopted.map(\.slot)
+        Log.engine.info("adopted \(slots.count) \(bundleID, privacy: .public) windows into workspaces \(Set(adopted.map(\.workspaceID)).sorted(), privacy: .public)")
+        if let target = state.workspace(first.workspaceID) {
             onFeedback?(.returned(app: AppIconService.shared.name(for: bundleID), workspace: target.name))
         }
         enforceFrames(of: slots)
 
-        if let entries = placed[state.selectedID], let pid = entries.first?.window.pid {
+        let selected = adopted.filter { $0.workspaceID == state.selectedID }.map { (slot: $0.slot, window: $0.window) }
+        if let pid = selected.first?.window.pid {
             Task {
                 beginOwnActivations()
                 defer { endOwnActivations() }
-                await bringForward(entries, pid: pid)
+                await bringForward(selected, pid: pid)
             }
         }
         return slots.count
@@ -331,7 +329,7 @@ final class WorkspaceEngine {
     private func launchPendingApps(for workspaceID: Int) {
         for bundleID in state.pendingBundleIDs(in: workspaceID) {
             if let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == bundleID }) {
-                if adoptTasks[bundleID] == nil || adoptTasks[bundleID]?.isCancelled == true { adoptIfPending(app) }
+                if adoptTasks[bundleID]?.isCancelled ?? true { adoptIfPending(app) }
                 continue
             }
             guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
