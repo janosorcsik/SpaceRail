@@ -223,8 +223,7 @@ final class AppController {
     // Handlers can't be unregistered; a removed workspace's shortcut is cleared instead, so the
     // handler never fires again. IDs are never reused.
     private func registerShortcuts(for id: Int) {
-        guard !registeredWorkspaceIDs.contains(id) else { return }
-        registeredWorkspaceIDs.insert(id)
+        guard registeredWorkspaceIDs.insert(id).inserted else { return }
 
         KeyboardShortcuts.onKeyDown(for: .switchTo(id)) { [weak self] in
             self?.whenRunning { $0.switchTo(id) }
