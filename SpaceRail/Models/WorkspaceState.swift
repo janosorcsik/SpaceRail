@@ -21,13 +21,10 @@ nonisolated struct Workspace: Codable, Identifiable, Sendable {
     var windows: [WindowSlot] = []
 
     var bundleIDs: [String] { windows.map(\.bundleID) }
+}
 
-    init(id: Int, name: String, windows: [WindowSlot] = []) {
-        self.id = id
-        self.name = name
-        self.windows = windows
-    }
-
+// In an extension so the memberwise initializer survives.
+nonisolated extension Workspace {
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(Int.self, forKey: .id)
@@ -47,12 +44,11 @@ nonisolated struct PendingApp: Codable, Sendable {
 
     var slots: [Slot]
 
-    init(slots: [Slot]) {
-        self.slots = slots
-    }
-
     var workspaceIDs: Set<Int> { Set(slots.map(\.workspaceID)) }
 
+}
+
+nonisolated extension PendingApp {
     private enum CodingKeys: String, CodingKey {
         case slots
         // Before an app could come back into more than one workspace.
@@ -129,12 +125,6 @@ nonisolated struct WorkspaceState: Codable, Sendable {
         workspaces.first { $0.windows.contains { $0.windowID == windowID } }?.id
     }
 
-    mutating func remove(windowID: CGWindowID) {
-        for index in workspaces.indices {
-            workspaces[index].windows.removeAll { $0.windowID == windowID }
-        }
-    }
-
     mutating func removeAll(where predicate: (WindowSlot) -> Bool) {
         for index in workspaces.indices {
             workspaces[index].windows.removeAll(where: predicate)
@@ -176,12 +166,9 @@ nonisolated struct WorkspaceState: Codable, Sendable {
     @discardableResult
     mutating func retireDeadWindows(in list: WindowList, atLaunch: Bool) -> Int {
         let running = list.runningBundleIDs
-        let allSlots = workspaces.flatMap(\.windows)
-        let apps = Set(allSlots.map(\.bundleID))
-        for bundleID in apps {
-            let slots = allSlots.filter { $0.bundleID == bundleID }
-            guard !slots.contains(where: list.contains) else { continue }
-            if atLaunch || !running.contains(bundleID) { makePending(bundleID) }
+        for (bundleID, slots) in Dictionary(grouping: workspaces.flatMap(\.windows), by: \.bundleID)
+        where !slots.contains(where: list.contains) && (atLaunch || !running.contains(bundleID)) {
+            makePending(bundleID)
         }
         let before = workspaces.reduce(0) { $0 + $1.windows.count }
         removeAll { !list.contains($0) }

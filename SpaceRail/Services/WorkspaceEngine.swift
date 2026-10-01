@@ -161,7 +161,7 @@ final class WorkspaceEngine {
 
         let appName = app.localizedName ?? AppIconService.shared.name(for: bundleID)
         let alreadyThere = target.windows.contains { $0.windowID == window.id }
-        state.remove(windowID: window.id)
+        state.removeAll { $0.windowID == window.id }
         if alreadyThere {
             Log.engine.info("detached \(bundleID, privacy: .public) window \(window.id) from workspace \(id)")
             onFeedback?(.removed(app: appName, workspace: target.name))
