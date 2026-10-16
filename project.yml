@@ -43,6 +43,17 @@ targets:
         Debug:
           PRODUCT_NAME: SpaceRail Dev
           PRODUCT_BUNDLE_IDENTIFIER: com.janosorcsik.SpaceRail.debug
+    postBuildScripts:
+      - name: Strip unused localizations
+        basedOnDependencyAnalysis: false
+        script: |
+          res="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}"
+          [ -d "$res" ] || exit 0
+          find "$res" -type d -name '*.lproj' | while read -r d; do
+            keep=0
+            for l in $KEEP_LOCALIZATIONS; do [ "$(basename "$d")" = "$l.lproj" ] && keep=1; done
+            [ "$keep" = 1 ] || rm -rf "$d"
+          done
     scheme:
       testTargets: [SpaceRailTests]
       gatherCoverageData: false

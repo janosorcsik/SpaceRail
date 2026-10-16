@@ -20,6 +20,9 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS[config=Release] = NO
 // --- Platform -------------------------------------------------------------
 MACOSX_DEPLOYMENT_TARGET = 26.0
 SDKROOT = macosx
+// Apple Silicon only: no x86_64 slice, in Debug and Release alike.
+ARCHS = arm64
+ONLY_ACTIVE_ARCH = NO
 
 // --- Swift ----------------------------------------------------------------
 SWIFT_VERSION = 6.0
@@ -33,3 +36,9 @@ SWIFT_COMPILATION_MODE[config=Release] = wholemodule
 ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon
 ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor
 ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES
+
+// --- Localizations --------------------------------------------------------
+// The app has no localized resources of its own; the only ones are the KeyboardShortcuts
+// package's. A build phase in project.yml drops every .lproj not listed in KEEP_LOCALIZATIONS.
+KEEP_LOCALIZATIONS = en hu
+ENABLE_USER_SCRIPT_SANDBOXING = NO

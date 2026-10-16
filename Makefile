@@ -49,7 +49,7 @@ run: build ## Build and (re)launch the dev app
 
 install: generate ## Archive Release and install to /Applications (replaces the running copy)
 	@rm -rf "$(ARCHIVE)"
-	$(XCODEBUILD) -configuration Release -destination 'generic/platform=macOS' -archivePath "$(ARCHIVE)" archive
+	$(XCODEBUILD) -configuration Release -destination 'generic/platform=macOS' ARCHS=arm64 ONLY_ACTIVE_ARCH=NO -archivePath "$(ARCHIVE)" archive
 	@pkill -x "$(PROJECT)" 2>/dev/null || true
 	@rm -rf "$(INSTALLED)"
 	cp -R "$(APP_IN_ARCH)" "$(INSTALLED)"
